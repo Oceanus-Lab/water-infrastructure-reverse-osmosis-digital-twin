@@ -1,0 +1,45 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Virtual environments ---
+.venv/
+.venv-*/
+venv/
+env/
+
+# --- Secrets / local config ---
+.env
+.env.*
+!.env.example
+*.key
+*-key.json
+service-account*.json
+gcp-credentials*.json
+
+# --- OS / editor cruft ---
+.DS_Store
+*.swp
+*~
+
+# --- Node / frontend (future) ---
+node_modules/
+dist/
+build/
+.next/
+*.log
+npm-debug.log*
+
+# --- Spec Kit transient state ---
+.specify/feature.json
+
+# --- Raw third-party data (OCWD dataset, ~39M) ---
+# Not version-controlled. Source: Harvard Dataverse "orange_county_ro".
+# See docs/02-data-pipeline.md for provenance and download instructions.
+dataverse_files/
