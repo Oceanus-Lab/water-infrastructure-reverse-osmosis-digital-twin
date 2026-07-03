@@ -7,7 +7,6 @@
 [![Watch: How Reverse Osmosis Works](https://img.youtube.com/vi/MC6Qrr58SmA/0.jpg)](https://www.youtube.com/watch?v=MC6Qrr58SmA)
 
 > *Click the thumbnail above to watch a primer on how Reverse Osmosis works — a great starting point before diving into the codebase.*
-
 ---
 
 ## What is RO water?
@@ -48,6 +47,8 @@ For this project, the twin mirrors an RO facility by combining:
 4. **Economic calculations** (what changes mean for cost)
 
 The goal is decision support — **not automatic control of equipment**.
+
+![High Fidelity Digital Twin](docs/High%20Fidelity%20Digital%20Twin.gif)
 
 ## 🗂️ Where to Start
 
