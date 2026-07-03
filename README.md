@@ -10,13 +10,44 @@
 
 ---
 
-## 🌊 The Problem
+## What is RO water?
 
-Reverse Osmosis (RO) is the dominant technology for treating brackish and seawater into clean, usable water. In a BWRO facility, high-pressure pumps force feedwater through semi-permeable membranes to remove dissolved salts and contaminants. The challenge: **membranes foul and scale over time** — mineral deposits clog the membrane surface, reducing water throughput (flux) and spiking energy costs. Operators today rely on manual schedules and lagging indicators to decide when to chemically clean a membrane unit (a CIP event), often cleaning too early (wasted resources) or too late (irreversible damage). At scale across 7 banks and 21 membrane units running 24/7, this guesswork translates directly to millions in avoidable operational cost and risk of supply disruption.
+**RO (Reverse Osmosis)** is a water-cleaning process.
 
-## 🏗️ What We're Building
+- Water is pushed through a very fine membrane (a special filter).
+- The membrane blocks most salts and impurities.
+- Cleaner water passes through; concentrated waste (brine) is separated out.
 
-This project builds a **digital twin** — a live software replica of a real BWRO plant — using the Orange County Water District (OCWD) historical dataset (21 units, 15,624 daily rows, 71 CIP events, 2019–2021) as both training ground and replay engine. The architecture runs entirely on GCP: raw sensor data flows through Cloud Storage and Pub/Sub into **BigQuery, which acts as both the data warehouse and the primary AI compute layer** — running forecasting (`AI.FORECAST`), anomaly detection (`AI.DETECT_ANOMALIES`), and NL summarization in-place via SQL. A **WaterTAP physics engine** (Python/Pyomo, Cloud Run) provides first-principles simulation for what-if scenarios and fills in energy gaps that sensors don't capture. An **ADK 2.0 diagnostics agent** (Gemini Flash on Vertex AI Agent Runtime) ties it all together — answering operator questions, surfacing fouling alerts with evidence, and recommending CIP timing — all in an advise-only, no-hallucination-allowed governance mode.
+For **brackish water** (water that is saltier than freshwater but less salty than seawater), RO is one of the most common ways to produce usable water for communities and industry.
+
+---
+
+## Why this project exists
+
+RO plants generate lots of data every day, but it can be hard to quickly answer practical questions like:
+
+- Is the plant running normally?
+- Is membrane fouling getting worse?
+- Why did energy use increase this week?
+- What changed after a cleaning event (CIP)?
+- What is the cost impact of a process change?
+
+This digital twin combines plant data, physics-based simulation, and AI analysis to support those decisions.
+
+---
+
+## What is a “digital twin”?
+
+A **digital twin** is a software model of a real system.
+
+For this project, the twin mirrors an RO facility by combining:
+
+1. **Operational data** (what happened in the plant)
+2. **Physics models** (what should happen based on process behavior)
+3. **AI diagnostics** (what looks unusual and why)
+4. **Economic calculations** (what changes mean for cost)
+
+The goal is decision support — **not automatic control of equipment**.
 
 ## 🗂️ Where to Start
 
