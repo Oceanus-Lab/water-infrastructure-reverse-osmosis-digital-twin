@@ -78,7 +78,7 @@ def fleet(date: str = Query(...)):
         for stage in ("01", "02", "03"):
             uid = f"{bank}{stage}"
             r = by_unit.get(uid)
-            score = _health_score(r["current_rise"], r["anomalies"]) if r is not None else None
+            score = _health_score(r["current_rise"], r.get("anomalies_count", 0)) if r is not None else None
             out.append({
                 "id": uid, "score": score, "status": _status(score),
                 "scoreSource": _measured(uid), "timestamp": date,
@@ -124,7 +124,7 @@ def alerts(date: str = Query(...)):
             for _, r in att.iterrows()} if not att.empty else {}
     out, i = [], 0
     for _, r in latest.sort_values("days_to_clean").iterrows():
-        dtc, anom = r["days_to_clean"], int(r["anomalies"])
+        dtc, anom = r["days_to_clean"], int(r.get("anomalies_count", 0))
         if pd.notna(dtc) and dtc <= 21:
             sev, msg = "critical", "Fouling threshold imminent"
         elif anom >= 8:

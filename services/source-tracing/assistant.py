@@ -46,7 +46,7 @@ def brief(unit: str, fc, att, econ) -> str:
             lines.append(f"• Fouling trend (003/004): ΔP rising {rate:.4f}/day "
                          f"(R²={frow['trend_r2']:.2f}); current rise {frow['current_rise']:+.2f}. "
                          f"Projected days-to-clean: {'—' if pd.isna(dtc) else f'{dtc:.0f} d'}. "
-                         f"Anomalies flagged: {int(frow['anomalies'])}.")
+                         f"Anomalies flagged: {int(frow.get('anomalies_count', 0))}." )
     # 005 — source attribution
     if not a.empty:
         r = a.sort_values("cycle_id").iloc[-1]
@@ -67,8 +67,8 @@ def brief(unit: str, fc, att, econ) -> str:
         rec, why = "SCHEDULE CIP SOON", f"projected to hit action threshold in ~{frow['days_to_clean']:.0f} days"
     elif erow is not None and str(erow["recommendation"]) == "CLEAN NOW":
         rec, why = "SCHEDULE CIP SOON", "energy-penalty cost model recommends cleaning"
-    if frow is not None and pd.notna(frow["anomalies"]) and int(frow["anomalies"]) >= 8:
-        why += f"; {int(frow['anomalies'])} anomalies warrant inspection"
+    if frow is not None and pd.notna(frow.get("anomalies_count")) and int(frow.get("anomalies_count", 0)) >= 8:
+        why += f"; {int(frow.get('anomalies_count', 0))} anomalies warrant inspection"
     lines.append(f"→ RECOMMENDATION: {rec} — {why}. (operator decides; system does not actuate)")
     return "\n".join(lines)
 
