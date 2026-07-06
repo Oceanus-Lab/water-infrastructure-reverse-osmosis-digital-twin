@@ -5,7 +5,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavHeader } from "@/components/nav-header";
 
 const manrope = Manrope({
-  variable: "--font-sans",
   subsets: ["latin"],
 });
 
@@ -20,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${manrope.variable} h-full antialiased`}>
-      <body className="h-full flex flex-col overflow-hidden">
+    <html lang="en" className="h-full antialiased">
+      <body className={`${manrope.className} h-full flex flex-col overflow-hidden bg-[#FBFBFA]`}>
         <TooltipProvider>
           <NavHeader />
           {children}

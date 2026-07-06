@@ -24,7 +24,6 @@ export function InspectionDrawer() {
       return;
     }
     
-    // In real app, we'd use React Query or Promise.all
     fetchUnitInspection(selectedUnitId, currentDate).then(setInspection);
     fetchAlerts(currentDate).then(data => setAlerts(data.filter(a => a.unitId === selectedUnitId)));
     fetchFleetStatus(currentDate).then(fleet => setUnitHealth(fleet.find(u => u.id === selectedUnitId) || null));
@@ -33,29 +32,28 @@ export function InspectionDrawer() {
 
   return (
     <aside 
-      role="region" 
-      aria-label="Unit Inspection Details" 
-      aria-live="polite"
+      role="region"
+      aria-label="Inspection Pane"
       className={cn(
-      "shrink-0 bg-background border-l border-border/40 shadow-[-8px_0_30px_rgba(0,0,0,0.02)] flex flex-col transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]",
-      selectedUnitId ? "w-[380px] lg:w-[420px]" : "w-[320px] bg-background/50 backdrop-blur-sm"
+      "shrink-0 bg-[#E8E8E8] border-l border-border/20 shadow-[-8px_0_30px_rgba(0,0,0,0.03)] flex flex-col transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]",
+      "w-[400px] lg:w-[460px] h-full relative"
     )}>
       {!selectedUnitId ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground animate-in fade-in fill-mode-both duration-1000">
-          <Activity className="size-8 mb-4 opacity-20" />
-          <p className="text-sm font-medium tracking-tight">Select an equipment unit<br/>to view details</p>
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground/60 animate-in fade-in fill-mode-both duration-1000">
+          <Activity className="size-8 mb-4 opacity-30" />
+          <p className="text-sm font-semibold tracking-tight uppercase">Select an equipment unit<br/>to view details</p>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col overflow-y-auto p-8 gap-8 animate-in fade-in slide-in-from-right-8 fill-mode-both duration-700" key={selectedUnitId}>
+        <div className="flex-1 flex flex-col overflow-y-auto p-8 gap-10 animate-in fade-in slide-in-from-right-8 fill-mode-both duration-700" key={selectedUnitId}>
           
           {/* Header */}
-          <header className="flex flex-col gap-4">
+          <header className="flex flex-col gap-6">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-muted-foreground mb-1">Unit Inspection</div>
-                <h2 className="text-2xl font-bold tracking-tight text-foreground">{selectedUnitId}</h2>
+                <div className="text-[11px] uppercase tracking-[0.2em] font-bold text-muted-foreground/80 mb-2">Unit Inspection</div>
+                <h2 className="text-3xl font-extrabold tracking-tight text-foreground">{selectedUnitId}</h2>
               </div>
-              <button onClick={() => setSelectedUnitId(null)} className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground hover:text-foreground transition-colors p-2 rounded-full hover:bg-muted/20">
+              <button onClick={() => setSelectedUnitId(null)} className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground hover:text-foreground transition-colors p-2 bg-white rounded-full shadow-sm">
                 Close
               </button>
             </div>
@@ -65,24 +63,24 @@ export function InspectionDrawer() {
             )}
           </header>
 
-          <div className="h-px bg-border/40 w-full" />
+          <div className="h-px bg-border/30 w-full" />
 
           {/* Diagnostics Panel */}
           <section className="flex flex-col gap-4">
-            <h3 className="text-[10px] uppercase tracking-[0.2em] font-semibold text-muted-foreground flex items-center gap-2">
+            <h3 className="text-[11px] uppercase tracking-[0.2em] font-bold text-muted-foreground/80 flex items-center gap-2">
               <TriangleAlert className="size-3" /> Diagnostics
             </h3>
             {alerts.length === 0 ? (
-              <div className="bg-green-500/5 border border-green-500/10 rounded-2xl p-4 text-sm text-green-700 font-medium">
-                No active alerts for this unit.
+              <div className="bg-white/50 border border-border/20 rounded-[20px] p-5 text-sm text-foreground font-semibold">
+                No active anomalies.
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-4">
                 {alerts.map(alert => (
-                  <Alert key={alert.id} variant={alert.severity === 'critical' ? 'destructive' : 'default'} className="bg-background rounded-2xl shadow-sm border-border/50">
-                    <TriangleAlert className="h-4 w-4" />
-                    <AlertTitle className="font-semibold">{alert.message}</AlertTitle>
-                    <AlertDescription className="text-xs opacity-90 mt-1.5 leading-relaxed">
+                  <Alert key={alert.id} className="bg-white border-none rounded-[20px] shadow-sm">
+                    <TriangleAlert className="h-4 w-4 text-foreground" />
+                    <AlertTitle className="font-extrabold">{alert.message}</AlertTitle>
+                    <AlertDescription className="text-[12px] opacity-80 mt-2 font-medium leading-relaxed text-foreground">
                       {alert.evidence}
                     </AlertDescription>
                   </Alert>
@@ -93,36 +91,36 @@ export function InspectionDrawer() {
 
           {/* Current Telemetry */}
           <section className="flex flex-col gap-4">
-            <h3 className="text-[10px] uppercase tracking-[0.2em] font-semibold text-muted-foreground flex items-center gap-2">
+            <h3 className="text-[11px] uppercase tracking-[0.2em] font-bold text-muted-foreground/80 flex items-center gap-2">
               <Cpu className="size-3" /> Current Telemetry
             </h3>
             
             {inspection ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <TelemetryCard label="Flux" value={inspection.flux.value} unit="LMH" source={inspection.flux.source} />
                 <TelemetryCard label="Delta P" value={inspection.pressureDrop.value} unit="bar" source={inspection.pressureDrop.source} />
                 <TelemetryCard label="Energy" value={inspection.energyUsage.value} unit="kWh/m³" source={inspection.energyUsage.source} />
                 <TelemetryCard label="Clean Cycle" value={inspection.daysSinceClean} unit="days" source="measured" />
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="h-24 bg-muted/10 rounded-2xl animate-pulse" />
-                <div className="h-24 bg-muted/10 rounded-2xl animate-pulse" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="h-28 bg-white/40 rounded-[20px] animate-pulse" />
+                <div className="h-28 bg-white/40 rounded-[20px] animate-pulse" />
               </div>
             )}
           </section>
 
-          {/* AI Assistant Stub (Gemini Enterprise Runtime compatible) */}
-          <section className="flex flex-col gap-3 mt-auto pt-8">
-            <div className="rounded-[1.5rem] border border-border/40 bg-gradient-to-b from-primary/[0.03] to-transparent p-5 flex flex-col gap-4 shadow-sm relative overflow-hidden">
-              <div className="flex items-center gap-2 text-primary font-semibold text-sm">
+          {/* AI Assistant Stub */}
+          <section className="flex flex-col gap-4 mt-auto pt-8">
+            <div className="rounded-[20px] border-none bg-white p-6 flex flex-col gap-5 shadow-sm">
+              <div className="flex items-center gap-2 text-foreground font-extrabold text-sm uppercase tracking-widest">
                 <BotMessageSquare className="size-4" />
                 AI Assistant
               </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                I am analyzing the latest signals. Ask me to forecast fouling accumulation or recommend CIP schedules.
+              <p className="text-[13px] text-muted-foreground font-medium leading-relaxed">
+                Analyzing the latest signals. Ask me to forecast fouling accumulation or recommend CIP schedules.
               </p>
-              <div className="w-full h-10 rounded-full bg-background border border-border/50 text-xs text-muted-foreground font-medium flex items-center px-4 mt-2 cursor-text hover:border-primary/30 transition-colors shadow-sm">
+              <div className="w-full h-12 rounded-[16px] bg-[#F9F9F8] border border-border/20 text-[12px] text-muted-foreground font-bold flex items-center px-5 cursor-text hover:border-black/20 transition-colors shadow-inner">
                 Ask a question...
               </div>
             </div>
@@ -136,13 +134,13 @@ export function InspectionDrawer() {
 
 function TelemetryCard({ label, value, unit, source }: { label: string, value: number, unit: string, source: string }) {
   return (
-    <div className="flex flex-col p-4 rounded-2xl border border-border/40 bg-background hover:bg-muted/20 transition-colors shadow-sm group">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">{label}</span>
-      <div className="flex items-baseline gap-1">
-        <span className="text-xl font-bold tracking-tight text-foreground">{value.toFixed(1)}</span>
-        <span className="text-[10px] text-muted-foreground font-semibold">{unit}</span>
+    <div className="flex flex-col p-5 rounded-[20px] bg-white transition-colors shadow-sm">
+      <span className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground font-extrabold mb-3">{label}</span>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-2xl font-black tracking-tight text-foreground">{value.toFixed(1)}</span>
+        <span className="text-[11px] text-muted-foreground font-bold">{unit}</span>
       </div>
-      <div className="text-[9px] uppercase tracking-widest text-muted-foreground/40 mt-2 font-bold group-hover:text-muted-foreground/60 transition-colors">
+      <div className="text-[9px] uppercase tracking-widest text-muted-foreground/50 mt-3 font-extrabold">
         {source}
       </div>
     </div>
