@@ -3,6 +3,7 @@ import { DM_Sans, DM_Mono } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavHeader } from "@/components/nav-header";
+import { AssistantPanel } from "@/components/assistant/assistant-panel";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -31,6 +32,7 @@ export default function RootLayout({
         <TooltipProvider>
           <NavHeader />
           {children}
+          <AssistantPanel />
         </TooltipProvider>
       </body>
     </html>

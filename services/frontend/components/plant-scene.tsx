@@ -44,7 +44,7 @@ export function PlantScene() {
   };
 
   return (
-    <section className="relative w-full flex flex-col gap-4">
+    <section className="relative w-full min-w-[320px] flex flex-col gap-4">
 
       {/* 1. Backdrop */}
       <div className="relative w-full h-[550px] overflow-hidden bg-transparent">

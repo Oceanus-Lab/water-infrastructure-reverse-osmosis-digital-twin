@@ -2,6 +2,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Droplet } from "lucide-react";
+import { AssistantTrigger } from "@/components/assistant/assistant-trigger";
 
 export function NavHeader() {
   const pathname = usePathname();
@@ -29,7 +30,9 @@ export function NavHeader() {
         </TabsList>
       </Tabs>
 
-      <div className="w-[180px]" /> {/* Spacer for flex layout balancing */}
+      <div className="w-[180px] flex justify-end">
+        <AssistantTrigger />
+      </div>
     </header>
   );
 }
