@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .clock import RunState
@@ -10,6 +11,12 @@ from .logger import get_logger
 logger = get_logger(__name__)
 
 app = FastAPI(title="RO Digital Twin - Replay Controller")
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["GET", "POST"], 
+    allow_headers=["*"],
+)
 harness = ReplayHarness(start_date="2019-01-01")
 
 class JumpRequest(BaseModel):
