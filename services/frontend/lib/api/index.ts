@@ -3,25 +3,28 @@ import { getMockTimelineRange } from "../data/mock-timeline";
 import { getMockInspection } from "../data/mock-inspection";
 import { getMockAlerts } from "../data/mock-alerts";
 
-// Simulating network delay for realism
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+// Real serving API (ro-serving-api). Falls back to mock data if the API is unreachable,
+// so the UI still renders offline. Set NEXT_PUBLIC_API_URL to override the default.
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export const fetchFleetStatus = async (date: string) => {
-  await delay(300);
-  return generateMockFleet(date);
-};
+async function live<T>(path: string, fallback: () => T): Promise<T> {
+  try {
+    const res = await fetch(`${API}${path}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return (await res.json()) as T;
+  } catch {
+    return fallback(); // graceful fallback to mock
+  }
+}
 
-export const fetchTimelineRange = async () => {
-  await delay(100);
-  return getMockTimelineRange();
-};
+export const fetchFleetStatus = (date: string) =>
+  live(`/api/fleet?date=${date}`, () => generateMockFleet(date));
 
-export const fetchUnitInspection = async (unitId: string, date: string) => {
-  await delay(200);
-  return getMockInspection(unitId, date);
-};
+export const fetchTimelineRange = () =>
+  live(`/api/timeline`, () => getMockTimelineRange());
 
-export const fetchAlerts = async (date: string) => {
-  await delay(300);
-  return getMockAlerts(date);
-};
+export const fetchUnitInspection = (unitId: string, date: string) =>
+  live(`/api/inspection/${unitId}?date=${date}`, () => getMockInspection(unitId, date));
+
+export const fetchAlerts = (date: string) =>
+  live(`/api/alerts?date=${date}`, () => getMockAlerts(date));
