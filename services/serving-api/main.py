@@ -60,6 +60,17 @@ def _health_score(current_rise, anomalies) -> int | None:
     return int(max(5, min(98, round(score))))
 
 
+def _get_active_cycles(date: str) -> dict:
+    readings = _csv("readings.csv")
+    if readings.empty:
+        return {}
+    past = readings[readings["reading_date"] <= date]
+    if past.empty:
+        return {}
+    last = past.sort_values("reading_date").groupby("unit_id").tail(1)
+    return last.set_index("unit_id")["cycle_id"].to_dict()
+
+
 @app.get("/api/timeline")
 def timeline():
     r = _csv("readings.csv")
@@ -71,8 +82,13 @@ def timeline():
 @app.get("/api/fleet")
 def fleet(date: str = Query(...)):
     fc = _csv("forecasts.csv")
-    latest = fc.sort_values("cycle_id").groupby("unit_id").tail(1) if not fc.empty else fc
-    by_unit = {r["unit_id"]: r for _, r in latest.iterrows()} if not latest.empty else {}
+    cycles = _get_active_cycles(date)
+    by_unit = {}
+    for uid, cyc in cycles.items():
+        m = fc[(fc["unit_id"] == uid) & (fc["cycle_id"] == cyc)]
+        if not m.empty:
+            by_unit[uid] = m.iloc[0]
+            
     out = []
     for bank in "ABCDEFG":
         for stage in ("01", "02", "03"):
@@ -90,15 +106,18 @@ def fleet(date: str = Query(...)):
 def inspection(unit_id: str, date: str = Query(...)):
     readings = _csv("readings.csv")
     econ = _csv("economics.csv")
-    u = readings[readings["unit_id"] == unit_id].sort_values("reading_date")
+    u = readings[(readings["unit_id"] == unit_id) & (readings["reading_date"] <= date)].sort_values("reading_date")
     last = u.iloc[-1] if not u.empty else None
-    # days since the last CIP = position within the current cleaning cycle (resets at CIP)
+    
     days_since_clean = 0
+    energy = None
     if last is not None:
-        cyc = u[u["cycle_id"] == last["cycle_id"]]
+        cyc_id = last["cycle_id"]
+        cyc = u[u["cycle_id"] == cyc_id]
         days_since_clean = int(last["days_since_replacement"] - cyc["days_since_replacement"].min())
-    e = econ[econ["unit_id"] == unit_id]
-    energy = float(e["daily_energy_penalty_usd"].iloc[-1]) if not e.empty else None
+        e = econ[(econ["unit_id"] == unit_id) & (econ["cycle_id"] == cyc_id)]
+        energy = float(e["daily_energy_penalty_usd"].iloc[-1]) if not e.empty else None
+
     src = _measured(unit_id)
     return {
         "unitId": unit_id, "timestamp": date,
@@ -119,11 +138,26 @@ def alerts(date: str = Query(...)):
     att = _csv("attributions.csv")
     if fc.empty:
         return []
-    latest = fc.sort_values("cycle_id").groupby("unit_id").tail(1)
-    mech = {r["unit_id"]: r["attributed_mechanism"]
-            for _, r in att.iterrows()} if not att.empty else {}
+        
+    cycles = _get_active_cycles(date)
+    
+    mech = {}
+    if not att.empty:
+        for _, r in att.iterrows():
+            if cycles.get(r["unit_id"]) == r["cycle_id"]:
+                mech[r["unit_id"]] = r["attributed_mechanism"]
+            
     out, i = [], 0
-    for _, r in latest.sort_values("days_to_clean").iterrows():
+    
+    latest_fc = pd.DataFrame([
+        r for _, r in fc.iterrows() 
+        if cycles.get(r["unit_id"]) == r["cycle_id"]
+    ])
+    
+    if latest_fc.empty:
+        return []
+        
+    for _, r in latest_fc.sort_values("days_to_clean").iterrows():
         dtc, anom = r["days_to_clean"], int(r.get("anomalies_count", 0))
         if pd.notna(dtc) and dtc <= 21:
             sev, msg = "critical", "Fouling threshold imminent"
@@ -166,14 +200,19 @@ def physics_deviation(unit_id: str, date: str = Query(...)):
         })
     return out
 
+
 @app.get("/api/forecast/{unit_id}")
 def get_forecast(unit_id: str, date: str = Query(...)):
     fc = _csv("forecasts.csv")
     if fc.empty:
         return None
     
-    # Get latest cycle forecast for this unit
-    unit_fc = fc[fc["unit_id"] == unit_id].sort_values("cycle_id").tail(1)
+    cycles = _get_active_cycles(date)
+    cyc = cycles.get(unit_id)
+    if not cyc:
+        return None
+        
+    unit_fc = fc[(fc["unit_id"] == unit_id) & (fc["cycle_id"] == cyc)]
     if unit_fc.empty:
         return None
     
@@ -202,7 +241,12 @@ def get_anomaly(unit_id: str, date: str = Query(...)):
     if fc.empty:
         return []
     
-    unit_fc = fc[fc["unit_id"] == unit_id].sort_values("cycle_id").tail(1)
+    cycles = _get_active_cycles(date)
+    cyc = cycles.get(unit_id)
+    if not cyc:
+        return []
+        
+    unit_fc = fc[(fc["unit_id"] == unit_id) & (fc["cycle_id"] == cyc)]
     if unit_fc.empty:
         return []
     
@@ -226,7 +270,6 @@ def validation():
         return {}
     with open(f, "r") as file:
         return json.load(file)
-
 
 
 @app.get("/")
