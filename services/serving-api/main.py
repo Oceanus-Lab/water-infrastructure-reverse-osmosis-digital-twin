@@ -142,7 +142,83 @@ def alerts(date: str = Query(...)):
     return out
 
 
+@app.get("/api/physics-deviation/{unit_id}")
+def physics_deviation(unit_id: str, date: str = Query(...)):
+    devs = _csv("deviations.csv")
+    if devs.empty:
+        return []
+    
+    u = devs[(devs["unit_id"] == unit_id) & (devs["reading_date"] == date)]
+    out = []
+    for _, r in u.iterrows():
+        out.append({
+            "unitId": r["unit_id"],
+            "cycleId": r["cycle_id"],
+            "readingDate": r["reading_date"],
+            "metric": r["metric"],
+            "expectedClean": r["expected_clean"] if pd.notna(r["expected_clean"]) else None,
+            "actual": r["actual"] if pd.notna(r["actual"]) else None,
+            "deviation": r["deviation"] if pd.notna(r["deviation"]) else None,
+            "deviationPct": r["deviation_pct"] if pd.notna(r["deviation_pct"]) else None,
+            "status": r["status"],
+            "fidelity": r["fidelity"],
+            "provenance": r["provenance"],
+        })
+    return out
+
+@app.get("/api/forecast/{unit_id}")
+def get_forecast(unit_id: str, date: str = Query(...)):
+    fc = _csv("forecasts.csv")
+    if fc.empty:
+        return None
+    
+    # Get latest cycle forecast for this unit
+    unit_fc = fc[fc["unit_id"] == unit_id].sort_values("cycle_id").tail(1)
+    if unit_fc.empty:
+        return None
+    
+    r = unit_fc.iloc[0]
+    has_evidence = pd.notna(r.get("days_to_clean"))
+    
+    return {
+        "unitId": r["unit_id"],
+        "timestamp": date,
+        "foulingRatePerDay": r["fouling_rate_per_day"],
+        "trendR2": r["trend_r2"],
+        "currentRise": r["current_rise"],
+        "daysToClean": r["days_to_clean"] if has_evidence else None,
+        "forecastBandDays": r["forecast_band_days"] if has_evidence else None,
+        "ciLower": r.get("ci_lower") if pd.notna(r.get("ci_lower")) else None,
+        "ciUpper": r.get("ci_upper") if pd.notna(r.get("ci_upper")) else None,
+        "forecastDrivers": eval(r.get("forecast_drivers", "['incomplete evidence']")) if isinstance(r.get("forecast_drivers"), str) else r.get("forecast_drivers", ["incomplete evidence"]),
+        "foulingOnsetScore": r.get("fouling_onset_score"),
+        "featureAttribution": eval(r.get("feature_attribution", "['unknown']")) if isinstance(r.get("feature_attribution"), str) else r.get("feature_attribution", ["unknown"])
+    }
+
+
+@app.get("/api/anomaly/{unit_id}")
+def get_anomaly(unit_id: str, date: str = Query(...)):
+    fc = _csv("forecasts.csv")
+    if fc.empty:
+        return []
+    
+    unit_fc = fc[fc["unit_id"] == unit_id].sort_values("cycle_id").tail(1)
+    if unit_fc.empty:
+        return []
+    
+    anomalies_str = unit_fc.iloc[0].get("anomalies", "[]")
+    if pd.isna(anomalies_str):
+        return []
+    
+    try:
+        import ast
+        anomalies_list = ast.literal_eval(anomalies_str)
+        return anomalies_list
+    except:
+        return []
+
+
 @app.get("/")
 def root():
     return {"service": "ro-serving-api", "endpoints": ["/api/fleet", "/api/inspection/{id}",
-                                                        "/api/alerts", "/api/timeline"]}
+                                                        "/api/alerts", "/api/timeline", "/api/physics-deviation/{unit_id}", "/api/forecast/{unit_id}", "/api/anomaly/{unit_id}"]}

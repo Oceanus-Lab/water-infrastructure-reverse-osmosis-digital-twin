@@ -1,0 +1,35 @@
+config {
+  type: "table",
+  schema: "ro_curated",
+  tags: ["curated", "daily"]
+}
+
+WITH dates AS (
+  -- Generate a sequence of dates to ensure continuous coverage even if APIs have gaps
+  SELECT date
+  FROM UNNEST(GENERATE_DATE_ARRAY('2019-01-01', CURRENT_DATE())) AS date
+),
+prices AS (
+  SELECT date, electricity_cost_usd_per_kwh 
+  FROM ${ref("stg_eia_prices")}
+  WHERE state_id = 'CA'
+),
+carbon AS (
+  SELECT date, grid_carbon_intensity_kg_per_kwh 
+  FROM ${ref("stg_eia_carbon")}
+  WHERE state_id = 'CA'
+),
+weather AS (
+  SELECT date, ambient_temperature_c 
+  FROM ${ref("stg_open_meteo")}
+)
+SELECT
+  d.date,
+  -- For prices and carbon, use LAST_VALUE to fill missing daily gaps from monthly data
+  LAST_VALUE(p.electricity_cost_usd_per_kwh IGNORE NULLS) OVER (ORDER BY d.date) AS electricity_cost_usd_per_kwh,
+  LAST_VALUE(c.grid_carbon_intensity_kg_per_kwh IGNORE NULLS) OVER (ORDER BY d.date) AS grid_carbon_intensity_kg_per_kwh,
+  w.ambient_temperature_c
+FROM dates d
+LEFT JOIN prices p ON d.date = p.date
+LEFT JOIN carbon c ON d.date = c.date
+LEFT JOIN weather w ON d.date = w.date

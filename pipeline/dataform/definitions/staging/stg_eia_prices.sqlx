@@ -1,0 +1,14 @@
+config {
+  type: "view",
+  schema: "ro_curated",
+  tags: ["staging", "daily"]
+}
+
+SELECT
+  date,
+  state_id,
+  price_cents_per_kwh,
+  -- Convert cents/kWh to USD/kWh
+  price_cents_per_kwh / 100.0 AS electricity_cost_usd_per_kwh
+FROM
+  `spatial-cat-489006-a4.ro_raw.eia_prices_raw`

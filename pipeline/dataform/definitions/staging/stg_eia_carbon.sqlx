@@ -1,0 +1,48 @@
+config {
+  type: "view",
+  schema: "ro_curated",
+  tags: ["staging", "daily"]
+}
+
+WITH mix_data AS (
+  SELECT
+    date,
+    state_id,
+    fuel_type,
+    SUM(generation_mwh) as mwh
+  FROM
+    `spatial-cat-489006-a4.ro_raw.eia_generation_mix_raw`
+  GROUP BY 1, 2, 3
+),
+total_gen AS (
+  SELECT
+    date,
+    state_id,
+    SUM(mwh) as total_mwh
+  FROM mix_data
+  GROUP BY 1, 2
+),
+emissions AS (
+  SELECT
+    m.date,
+    m.state_id,
+    m.fuel_type,
+    m.mwh,
+    t.total_mwh,
+    m.mwh / NULLIF(t.total_mwh, 0) as pct_mix,
+    -- Rough average emission factors kg CO2 per MWh
+    CASE
+      WHEN m.fuel_type IN ('COW', 'COL') THEN 1000 -- Coal
+      WHEN m.fuel_type IN ('NG', 'NGAS') THEN 400 -- Natural Gas
+      WHEN m.fuel_type IN ('PET') THEN 800 -- Petroleum
+      ELSE 0 -- Renewables, Nuclear, etc.
+    END as factor_kg_per_mwh
+  FROM mix_data m
+  JOIN total_gen t ON m.date = t.date AND m.state_id = t.state_id
+)
+SELECT
+  date,
+  state_id,
+  SUM((mwh * factor_kg_per_mwh) / NULLIF(total_mwh, 0)) / 1000.0 AS grid_carbon_intensity_kg_per_kwh
+FROM emissions
+GROUP BY 1, 2

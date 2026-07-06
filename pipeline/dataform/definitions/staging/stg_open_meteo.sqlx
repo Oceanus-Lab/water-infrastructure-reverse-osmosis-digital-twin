@@ -1,0 +1,13 @@
+config {
+  type: "view",
+  schema: "ro_curated",
+  tags: ["staging", "daily"]
+}
+
+SELECT
+  forecast_date as date,
+  latitude,
+  longitude,
+  temperature_2m_mean as ambient_temperature_c
+FROM
+  `spatial-cat-489006-a4.ro_raw.open_meteo_forecast_raw`

@@ -42,7 +42,7 @@ detection, embeddings, and NL summarization happen *in SQL, in-place* (`AI.FOREC
   source .venv-watertap-spike/bin/activate   # or .venv-watertap-spike/bin/python
   python spike_watertap.py
   ```
-- WaterTAP 1.6.0 bundles Ipopt via `watertap-solvers` — **never** run `idaes get-extensions`.
+- WaterTAP 1.6.0 bundles Ipopt via `watertap-solvers` when installed via **conda**. For a **pip** install (like the one used here), you MUST run `idaes get-extensions` to fetch the solver binary.
 - GCP target: region `us-central1`, Cloud Run (serverless, scales to zero).
 
 ## Project-specific conventions & gotchas

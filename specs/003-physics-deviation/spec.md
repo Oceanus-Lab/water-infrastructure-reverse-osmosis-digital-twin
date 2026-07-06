@@ -72,25 +72,7 @@ Every deviation the engine emits declares what it is and what it is not. It carr
 2. **Given** a deviation for a fouling-sensitive metric, **When** it is surfaced to a consumer, **Then** it is described at whole-unit resolution and never as an element-by-element diagnosis.
 3. **Given** a required input was itself modeled rather than measured, **When** the deviation is produced, **Then** that modeled provenance is stated on the output.
 
----
 
-### User Story 5 - Fouling source-tracing / mechanism attribution (Priority: P3, provisional placement)
-
-Once a reading has a confound-free deviation (Stories 1–4), an operator still needs to know *what kind* of fouling is driving it. This story layers a **source-tracing** capability on top of the deviation: it attributes a significant deviation to the feed-side fouling **mechanism** (mineral scaling / particulate-colloidal / biofouling / organic / oxidative damage) most consistent with the concurrent feed-side signals (EC, pH, turbidity, total chlorine, TOC) and the established symptom→cause diagnostic logic (stage location × ΔP-direction × salt-passage-direction). Attribution is at **mechanism resolution only**, carries measured-vs-modeled labels, returns **co-candidates** when the signals cannot separate mechanisms, and never overrides the measured deviation.
-
-**Why this priority**: it extends the deviation into an earlier, actionable "why," but it is strictly additive to Stories 1–4 and depends on their signal. It is P3 because the core confound-free delta ships without it.
-
-**⚠️ Placement note (provisional)**: 003 otherwise deliberately defers cause-attribution downstream (see Assumptions). This story is anchored here because the collaboration scoped source-tracing into 003, but it may relocate to **005 (fouling-validation, FR-022)** — which already owns mechanism corroboration and the data-limit honesty contract. Pending a scope confirmation; see [DRAFT-source-tracing-addendum.md](DRAFT-source-tracing-addendum.md) and [plan.md](plan.md) Complexity Tracking.
-
-**Independent Test**: For a set of significantly-fouled cycles, confirm each receives a ranked mechanism attribution with (a) the feed signals + performance pattern that supported it, (b) a measured/modeled label, and (c) co-candidates where signals are insufficient — and that no attribution claims exact scale speciation, bio-vs-organic separation, SDI from turbidity, or free-chlorine from total chlorine (the stated data limits).
-
-**Acceptance Scenarios**:
-
-1. **Given** a cycle with a significant ΔP rise and a high feed EC + high pH + tail-stage location, **When** attribution runs, **Then** it returns "scaling" (or a scaling-led co-candidate) with the supporting evidence, labeled modeled where it rests on an assumed ion profile.
-2. **Given** signals that cannot separate two mechanisms (e.g. high TOC alone), **When** attribution runs, **Then** it returns both as co-candidates rather than a single false-confident pick.
-3. **Given** any attribution, **When** it is surfaced, **Then** it carries its evidence and never reweights or overrides the measured deviation from Stories 1–4.
-
----
 
 ### Edge Cases
 
@@ -159,7 +141,7 @@ Once a reading has a confound-free deviation (Stories 1–4), an operator still 
 - **Supported metrics**: Permeate flux, salt passage/rejection, pressure drop (normalized ΔP / transmembrane pressure), and specific energy. Additional derived metrics may be added later without changing these requirements.
 - **Energy provenance**: Actual energy is metered only on some banks (F–G); expected energy is computed fleet-wide and labeled modeled where no measured actual exists. An energy deviation is produced only where a measured actual is available to compare against (supports FR-009 measured-vs-modeled honesty).
 - **"Clean" is defined by cycle position**: Clean-state readings are identified from early positions in the clean→cleaning cycle (low days-since-cleaning), used both to calibrate and to validate the baseline. Exact thresholds are tunable at planning time and do not change the requirements.
-- **Deviation is the health signal; cause-attribution is a separable, additive layer**: The core engine isolates *that* performance deviates from clean expectation, and forecasting its trajectory remains a downstream job. Attributing the deviation to a fouling *mechanism* is provided as the optional, clearly-separable **source-tracing** layer (User Story 5) that consumes — never alters — this delta; its placement (here vs. 005) is provisional per the US5 placement note.
+- **Deviation is the health signal; cause-attribution is a separable, additive layer**: The core engine isolates *that* performance deviates from clean expectation, and forecasting its trajectory remains a downstream job. Attributing the deviation to a fouling *mechanism* is handled by downstream features.
 - **Accuracy/lead-time claims are deferred**: This feature makes the clean-state error *measurable* (SC-002) and the signal *available* (SC-008); published precision, recall, and fouling lead-time figures are produced by the downstream fouling-validation feature after its backtest actually runs (evidence before claim).
 - **Baseline caching is acceptable**: Repeated expectations for the same operating condition may be reused; caching does not change any requirement here.
 - **Compute placement is out of scope**: Whether expected-vs-actual is computed in the analytics store, in a dedicated service, or a mix is an implementation decision for planning, not a requirement of this spec.

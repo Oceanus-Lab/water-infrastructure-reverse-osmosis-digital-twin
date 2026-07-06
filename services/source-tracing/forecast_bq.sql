@@ -15,7 +15,8 @@ SELECT
   forecast_timestamp,
   ROUND(forecast_value, 2)                    AS ndp_forecast,
   ROUND(prediction_interval_lower_bound, 2)   AS lo_90,
-  ROUND(prediction_interval_upper_bound, 2)   AS hi_90
+  ROUND(prediction_interval_upper_bound, 2)   AS hi_90,
+  'unit_n_delta_p_deviation'                  AS forecast_drivers
 FROM
   AI.FORECAST(
     (SELECT TIMESTAMP(reading_date) AS ts, unit_n_delta_p AS y
@@ -36,7 +37,10 @@ SELECT
   is_anomaly,
   ROUND(anomaly_probability, 3) AS anomaly_p,
   ROUND(lower_bound, 2) AS lo,
-  ROUND(upper_bound, 2) AS hi
+  ROUND(upper_bound, 2) AS hi,
+  'unit_n_delta_p_deviation' AS signal_name,
+  -- Assuming baseline is the midpoint between upper and lower bounds for the anomaly
+  ROUND(time_series_data - ((lower_bound + upper_bound) / 2), 2) AS deviation_from_baseline
 FROM
   AI.DETECT_ANOMALIES(
     (SELECT TIMESTAMP(reading_date) AS ts, unit_n_delta_p AS y

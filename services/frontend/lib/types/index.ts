@@ -43,3 +43,49 @@ export interface UnitInspection {
   energyUsage: { value: number | null; source: SourceProvenance };
   daysSinceClean: number;
 }
+
+export interface EnvironmentalContext {
+  date: string;
+  electricityCostUsdPerKwh: number;
+  gridCarbonIntensityKgPerKwh: number;
+  ambientTemperatureC: number;
+}
+
+export type DeviationStatus = 'ok' | 'out-of-range' | 'unavailable';
+export type FidelityLevel = 'analytical' | 'high';
+
+export interface PhysicsDeviation {
+  unitId: string;
+  cycleId: string;
+  readingDate: string;
+  metric: string; // e.g., 'unit_n_delta_p', 'salt_passage', 'unit_recovery'
+  expectedClean: number | null;
+  actual: number | null;
+  deviation: number | null;
+  deviationPct: number | null;
+  status: DeviationStatus;
+  fidelity: FidelityLevel;
+  provenance: SourceProvenance;
+}
+
+export interface Forecast {
+  unitId: string;
+  timestamp: string;
+  foulingRatePerDay: number;
+  trendR2: number;
+  currentRise: number;
+  daysToClean: number | null;
+  forecastBandDays: number | null;
+  ciLower: number | null;
+  ciUpper: number | null;
+  forecastDrivers: string[];
+  foulingOnsetScore: number;
+  featureAttribution: string[];
+}
+
+export interface Anomaly {
+  signal: string;
+  deviation_from_baseline: number;
+  z_score: number;
+}
+

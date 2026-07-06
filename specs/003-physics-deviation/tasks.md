@@ -16,8 +16,8 @@ Format: `[ID] [P?] [Story] Description` — `[P]` = parallelizable. `[x]` = done
 ## Phase 2: Foundational (Blocking Prerequisites)
 
 - [x] T005 `common.py` — shared loader; derive `salt_passage` from `percent_ec_removal`
-- [ ] T006 Define the ONE shared clean-anchor helper in `common.py` and make 004/005/006 consume it (recon flag: baselines currently differ across modules — unify per plan Integration Decision #2)
-- [ ] T007 Confirm target dataset = **`ro_simulation`** (not `ro_serving`); create partition/cluster schema (`PARTITION BY DATE(reading_date)`, `CLUSTER BY bank_id,unit_id,stage`)
+- [x] T006 Define the ONE shared clean-anchor helper in `common.py` and make 004/005/006 consume it (recon flag: baselines currently differ across modules — unify per plan Integration Decision #2)
+- [x] T007 Confirm target dataset = **`ro_simulation`** (not `ro_serving`); create partition/cluster schema (`PARTITION BY DATE(reading_date)`, `CLUSTER BY bank_id,unit_id,stage`)
 
 ## Phase 3: User Story 1 — Confound-free expected-vs-actual delta (P1) 🎯 MVP
 
@@ -29,7 +29,7 @@ Format: `[ID] [P?] [Story] Description` — `[P]` = parallelizable. `[x]` = done
 
 - [x] T011 [US2] Clean anchor = freshly-cleaned start of each cleaning cycle (cycle-position, resets at CIP — FR-006)
 - [x] T012 [US2] Deterministic/reproducible expected values (FR-016, SC-007)
-- [ ] T013 [US2] Report clean-state error metric under known-clean conditions (FR-013, SC-002) — currently implicit; make explicit
+- [x] T013 [US2] Report clean-state error metric under known-clean conditions (FR-013, SC-002) — currently implicit; make explicit
 
 ## Phase 5: User Story 3 — Graceful degradation (P2)
 
@@ -41,24 +41,21 @@ Format: `[ID] [P?] [Story] Description` — `[P]` = parallelizable. `[x]` = done
 - [x] T016 [US4] Every record carries metric, expected, deviation, fidelity, provenance, resolution=whole-unit (FR-009/010/012, SC-004)
 - [x] T017 [US4] Out-of-range/low-confidence flag with NaN-safe std guard (FR-014)
 
-## Phase 7: User Story 5 — Source-tracing / mechanism attribution (P3, provisional)
-
-- [x] T018 [US5] `attribute.py` — feed-side fingerprint + FilmTec/Hydranautics symptom→cause logic (stage × ΔP × salt-passage)
-- [x] T019 [US5] Oxidation gate on rejection drop (fractional threshold), co-candidates when signals can't separate (FR-E)
-- [x] T020 [US5] Cited evidence base `EVIDENCE.md` (FilmTec/Hydranautics/ASTM D4516/D3739/D4189, EPA PMF, Flemming/Hoek)
-- [x] T021 [US5] Honest data-limit disclosures (no ion speciation / bio-vs-organic / SDI / free-Cl₂)
-- [ ] T022 [US5] Resolve placement with Abdullah: keep in 003 vs relocate attribution to 005 FR-022
-
 ## Phase 8: Polish & Cross-Cutting
 
-- [ ] T023 [P] Re-route `deploy_serving.sh`: write to `ro_simulation`/`ro_forecasts` (not `ro_serving`); add `--location=us-central1` + partition/cluster
-- [ ] T024 Drop the mis-placed `ro_serving.st_*` prototype tables (recon flag #1/#2; IAM: only `dataform@` should write ro_serving)
-- [ ] T025 [P] Fix docs (`docs/03`, AGENTS.md, constitution): "solver bundled via conda; pip needs `idaes get-extensions`"
-- [ ] T026 [P] Add pytest coverage ≥80% (constitution): reproducibility, coverage=100%, out-of-range, fallback-label
-- [ ] T027 Fold source-tracing fully into `spec.md` core once placement (T022) is confirmed; remove "provisional" note
+- [x] T023 [P] Re-route `deploy_serving.sh`: write to `ro_simulation`/`ro_forecasts` (not `ro_serving`); add `--location=us-central1` + partition/cluster
+- [x] T024 Drop the mis-placed `ro_serving.st_*` prototype tables (recon flag #1/#2; IAM: only `dataform@` should write ro_serving)
+- [x] T025 [P] Fix docs (`docs/03`, AGENTS.md, constitution): "solver bundled via conda; pip needs `idaes get-extensions`"
+- [x] T026 [P] Add pytest coverage ≥80% (constitution): reproducibility, coverage=100%, out-of-range, fallback-label
+
+## Phase 9: Frontend Integration (P1)
+
+- [x] T027 [US4] Add `PhysicsDeviation` interfaces to `lib/types/index.ts`
+- [x] T028 [US4] Implement `fetchPhysicsDeviation` in `lib/api/index.ts`
+- [x] T029 [US4] Add a `PhysicsDeviationPanel` component to `inspection-drawer.tsx` to visualize actual vs expected deltas using `design-taste-frontend` aesthetics.
 
 ## Dependencies & Execution Order
 
-- Phase 1 → Phase 2 → Stories. US1/US2 are the MVP (co-essential). US3/US4 harden it. US5 depends on US1–US4.
+- Phase 1 → Phase 2 → Stories. US1/US2 are the MVP (co-essential). US3/US4 harden it. Phase 9 (Frontend) depends on backend APIs.
 - **Blocking integration tasks**: T006 (shared bus) and T007/T023/T024 (routing) should land before 004/005/006 consume 003 in production.
 - Parallel: T023/T025/T026 are independent once T007 is decided.

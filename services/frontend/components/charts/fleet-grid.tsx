@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useReplayStore } from "@/lib/store/replay-store";
-import { fetchFleetStatus } from "@/lib/api";
-import { UnitHealth } from "@/lib/types";
+import { fetchFleetStatus, fetchEnvironmentContext } from "@/lib/api";
+import { UnitHealth, EnvironmentalContext } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function FleetGrid() {
   const { currentDate, selectedUnitId, setSelectedUnitId } = useReplayStore();
   const [fleet, setFleet] = useState<UnitHealth[]>([]);
+  const [envContext, setEnvContext] = useState<EnvironmentalContext | null>(null);
 
   useEffect(() => {
     fetchFleetStatus(currentDate).then(setFleet);
+    fetchEnvironmentContext(currentDate).then(setEnvContext);
   }, [currentDate]);
 
   const banks = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
@@ -33,7 +35,7 @@ export function FleetGrid() {
       </div>
       
       <div className="flex-1 flex flex-col justify-center px-1">
-        <div className="grid grid-cols-7 gap-x-1.5 gap-y-2 w-full max-w-[280px] mx-auto">
+        <div className="grid grid-cols-7 gap-x-1.5 gap-y-2 w-full max-w-[280px] mx-auto mb-6">
           {banks.map(bank => (
             <div key={`header-${bank}`} className="text-center text-[10px] font-bold text-muted-foreground mb-1">
               {bank}
@@ -64,6 +66,20 @@ export function FleetGrid() {
             })
           ))}
         </div>
+
+        {/* ESG / Economic Context */}
+        {envContext && (
+          <div className="pt-4 border-t border-border/40 grid grid-cols-2 gap-4">
+             <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Grid Carbon Int.</div>
+                <div className="text-sm font-medium">{envContext.gridCarbonIntensityKgPerKwh.toFixed(2)} <span className="text-muted-foreground text-[10px]">kg CO₂/kWh</span></div>
+             </div>
+             <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Grid Energy Cost</div>
+                <div className="text-sm font-medium">${envContext.electricityCostUsdPerKwh.toFixed(2)} <span className="text-muted-foreground text-[10px]">/kWh</span></div>
+             </div>
+          </div>
+        )}
       </div>
     </div>
   );

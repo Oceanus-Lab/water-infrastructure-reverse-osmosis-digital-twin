@@ -28,3 +28,42 @@ export const fetchUnitInspection = (unitId: string, date: string) =>
 
 export const fetchAlerts = (date: string) =>
   live(`/api/alerts?date=${date}`, () => getMockAlerts(date));
+
+export const fetchEnvironmentContext = (date: string) =>
+  live(`/api/env?date=${date}`, () => ({
+    date,
+    electricityCostUsdPerKwh: 0.12, // approx 12 cents
+    gridCarbonIntensityKgPerKwh: 0.35, // approx 350 g/kWh
+    ambientTemperatureC: 22.5,
+  }));
+
+export const fetchPhysicsDeviation = async (unitId: string, date: string) => {
+  try {
+    const res = await fetch(`${API}/api/physics-deviation/${unitId}?date=${date}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return await res.json();
+  } catch {
+    return []; // Return empty array instead of mock data
+  }
+};
+
+export const fetchForecast = async (unitId: string, date: string) => {
+  try {
+    const res = await fetch(`${API}/api/forecast/${unitId}?date=${date}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return await res.json();
+  } catch {
+    return null;
+  }
+};
+
+export const fetchAnomaly = async (unitId: string, date: string) => {
+  try {
+    const res = await fetch(`${API}/api/anomaly/${unitId}?date=${date}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return await res.json();
+  } catch {
+    return [];
+  }
+};
+

@@ -19,7 +19,7 @@
 | Package | `watertap` (PyPI) |
 | Version | 1.6.0 |
 | Dependencies | `idaes-pse` 2.12.0, `pyomo` 6.10.1, `watertap-solvers` 24.12.9 |
-| Solver | Ipopt 3.13.2 — **bundled via `watertap-solvers`**, no `idaes get-extensions` needed |
+| Solver | Ipopt 3.13.2 — **bundled via `watertap-solvers`** if using conda. For **pip/uv** installs, you MUST run `idaes get-extensions` to fetch the binary. |
 | Python requirement | 3.11 (3.9–3.12 supported; 3.13+ not yet) |
 | Install | `pip install watertap` — self-contained |
 

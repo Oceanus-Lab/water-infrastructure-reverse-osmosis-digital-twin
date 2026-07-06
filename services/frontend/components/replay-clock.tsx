@@ -5,17 +5,14 @@ import { Play, Pause } from "lucide-react";
 import { useEffect } from "react";
 
 export function ReplayClock() {
-  const { currentDate, isPlaying, setIsPlaying, advanceTime } = useReplayStore();
+  const { currentDate, isPlaying, setIsPlaying, syncClock } = useReplayStore();
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isPlaying) {
-      interval = setInterval(() => {
-        advanceTime();
-      }, 500);
-    }
+    const interval = setInterval(() => {
+      syncClock();
+    }, 500);
     return () => clearInterval(interval);
-  }, [isPlaying, advanceTime]);
+  }, [syncClock]);
 
   const dateStr = format(parseISO(currentDate), "MMM dd, yyyy");
 
