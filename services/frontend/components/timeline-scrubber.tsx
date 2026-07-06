@@ -13,14 +13,14 @@ export function TimelineScrubber() {
   const totalDays = differenceInDays(end, start);
   const currentDay = Math.max(0, Math.min(totalDays, differenceInDays(current, start)));
 
-  const handleSliderChange = (vals: number[]) => {
-    const val = vals[0];
+  const handleSliderChange = (vals: number | readonly number[]) => {
+    const val = Array.isArray(vals) ? vals[0] : (vals as number);
     const newDate = addDays(start, val);
     setCurrentDate(formatISO(newDate));
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-center bg-white/95 backdrop-blur-md rounded-[24px] px-8 py-3 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-white">
+    <div className="flex-1 flex flex-col justify-center px-4 py-2 drop-shadow-sm">
       <div className="flex items-center justify-between w-full mb-3">
         <span className="text-[9px] text-muted-foreground font-extrabold tracking-widest uppercase">
           Timeline Scrubber

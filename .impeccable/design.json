@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-06T03:29:00Z",
+  "title": "Design System: RO Digital Twin",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Safety Blue", "canonical": "oklch(0.45 0.15 260)", "tonalRamp": ["oklch(0.2 0.15 260)", "oklch(0.3 0.15 260)", "oklch(0.4 0.15 260)", "oklch(0.5 0.15 260)", "oklch(0.6 0.15 260)", "oklch(0.7 0.15 260)", "oklch(0.8 0.15 260)", "oklch(0.9 0.15 260)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero headlines only." },
+      "body": { "displayName": "Body", "purpose": "Standard data and labels." }
+    },
+    "shadows": [
+      { "name": "ambient-low", "value": "0 4px 24px rgba(0,0,0,0.12)", "purpose": "Diffuse hover glow under accent elements." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Used for main actions.",
+      "html": "<button class=\"ds-btn-primary\">SUBMIT</button>",
+      "css": ".ds-btn-primary { background: #1465c4; color: #fff; padding: 12px 24px; font-family: Manrope, sans-serif; font-weight: 500; border: none; border-radius: 20px; transition: opacity 0.2s; } .ds-btn-primary:hover { opacity: 0.9; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Industrial Command Center",
+    "overview": "The RO Digital Twin interface is an industrial command center: dense, precise, and utilitarian. It respects the user's intelligence by prioritizing actionable information and data provenance over decorative elements. It explicitly rejects generic SaaS dashboards, overly colorful interfaces, soft drop-shadows, and \"AI slop\" aesthetics.",
+    "keyCharacteristics": [
+      "High-contrast and utilitarian data visualization",
+      "Consistent 20px corner radii for structured containers",
+      "Strict, evidence-based visual mapping (modeled vs. measured data)",
+      "Minimalist and unopinionated background surfaces"
+    ],
+    "rules": [
+      { "name": "The Function Over Decoration Rule", "body": "Color is reserved for state changes (nominal, degraded, critical) and data highlights. Never use color merely for decoration.", "section": "colors" },
+      { "name": "The Flat-By-Default Rule", "body": "Surfaces are flat at rest. Shadows appear only as a response to state (hover, elevation, focus) or z-index hierarchy (modals).", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Manrope exclusively for a precise, mechanical feel.",
+      "Do maintain a strict 20px border-radius on all cards and major structural elements.",
+      "Do map colors directly to operational states (e.g., degraded, critical).",
+      "Do explicitly mark data provenance (modeled vs. measured)."
+    ],
+    "donts": [
+      "Don't use generic SaaS dashboards or \"AI slop\" templates.",
+      "Don't use soft drop-shadows or floating elements without structural reason.",
+      "Don't use arbitrary corner radii; stick to the 20px system.",
+      "Don't use gradient text or decorative CSS grid backgrounds."
+    ]
+  }
+}

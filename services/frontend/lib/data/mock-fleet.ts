@@ -17,9 +17,9 @@ export const generateMockFleet = (date: string): UnitHealth[] => {
       let score: number | null = 85; 
       
       if (id === 'G03') score = null; // offline/unknown
-      else if (id === 'A01') score = 25; // critical
-      else if (id === 'C02') score = 55; // degraded
-      else if (id === 'F01') score = 95; // nominal
+      else if (id === 'A01') score = 25; // alert
+      else if (id === 'C02') score = 55; // watch
+      else if (id === 'F01') score = 95; // healthy
       
       fleet.push({
         id,

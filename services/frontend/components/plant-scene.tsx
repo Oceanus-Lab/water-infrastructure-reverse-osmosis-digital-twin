@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState, useRef } from "react";
 import { EquipmentSprite } from "./equipment-sprite";
+import { SpritePlaceholder } from "./sprite-placeholder";
 import { fetchFleetStatus } from "@/lib/api";
 import { UnitHealth } from "@/lib/types";
 import { useReplayStore } from "@/lib/store/replay-store";
@@ -11,7 +12,7 @@ import { ReplayClock } from "./replay-clock";
 import { TimelineScrubber } from "./timeline-scrubber";
 
 export function PlantScene() {
-  const { currentDate } = useReplayStore();
+  const { currentDate, selectedUnitId } = useReplayStore();
   const [fleet, setFleet] = useState<UnitHealth[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -20,6 +21,17 @@ export function PlantScene() {
   }, [currentDate]);
 
   const getUnit = (id: string) => fleet.find(u => u.id === id);
+
+  const getSpriteImage = (id: string | null) => {
+    if (!id || id === 'PLANT') return "/assets/equipment/ro-plant3.png";
+    if (id === 'F01' || id.startsWith('G')) return "/assets/equipment/hp-feed-pump.png";
+    if (id === 'F03') return "/assets/equipment/erd.png";
+    if (id === 'CIP1') return "/assets/equipment/cip-skid.png";
+    // Everything else (stages A-E, F02, etc.) is likely a membrane rack
+    return "/assets/equipment/ro-membrane-rack.png";
+  };
+
+  const currentMainImage = getSpriteImage(selectedUnitId);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -33,21 +45,26 @@ export function PlantScene() {
 
   return (
     <section className="relative w-full flex flex-col gap-4">
-      
+
       {/* 1. Backdrop */}
-      <div className="relative w-full aspect-[21/9] max-h-[500px] rounded-[20px] overflow-hidden bg-white shadow-sm border border-border/40">
+      <div className="relative w-full h-[550px] overflow-hidden bg-transparent">
         <Image
-          src="/assets/equipment/ro-plant.png"
-          alt="RO Plant Overview"
+          key={currentMainImage}
+          src={currentMainImage}
+          alt="Plant Overview"
           fill
-          className="object-cover mix-blend-multiply opacity-90"
+          className="object-cover object-[center_35%] mix-blend-multiply opacity-90 animate-in fade-in duration-500"
           priority
         />
-        
-        {/* OVERLAPPING REPLAY CONTROLS */}
-        <div className="absolute top-4 left-4 right-4 flex gap-4 z-10">
-          <ReplayClock />
-          <TimelineScrubber />
+
+        {/* Replay Controls - Overlapping top empty space */}
+        <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+          <div className="pointer-events-auto">
+            <ReplayClock />
+          </div>
+          <div className="w-[400px] pointer-events-auto">
+            <TimelineScrubber />
+          </div>
         </div>
       </div>
 
@@ -63,31 +80,32 @@ export function PlantScene() {
               21 Units Monitored
             </span>
           </div>
-          
+
           <div className="flex items-center gap-2">
-            <button onClick={() => scroll('left')} className="p-2.5 rounded-full border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer">
+            <button onClick={() => scroll('left')} className="p-2.5 rounded-[8px] border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer">
               <ChevronLeft className="size-4" />
             </button>
-            <button onClick={() => scroll('right')} className="p-2.5 rounded-full border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer">
+            <button onClick={() => scroll('right')} className="p-2.5 rounded-[8px] border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer">
               <ChevronRight className="size-4" />
             </button>
           </div>
         </div>
-        
-        <div 
+
+        <div
           ref={scrollContainerRef}
           className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x pt-1"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {/* Flat horizontal list instead of grid */}
+          <EquipmentSprite id="PLANT" label="Water Plant" imageSrc="/assets/equipment/ro-plant3.png" isDefault />
           <EquipmentSprite id="F01" label="HP Feed Pump" imageSrc="/assets/equipment/hp-feed-pump.png" unit={getUnit('F01')} />
           <EquipmentSprite id="F02" label="RO Rack" imageSrc="/assets/equipment/ro-membrane-rack.png" unit={getUnit('F02')} />
           <EquipmentSprite id="F03" label="ERD System" imageSrc="/assets/equipment/erd.png" unit={getUnit('F03')} />
           <EquipmentSprite id="CIP1" label="CIP Skid" imageSrc="/assets/equipment/cip-skid.png" unit={getUnit('CIP1')} />
-          <EquipmentSprite id="A01" label="Pre-Filter A" imageSrc="/assets/equipment/ro-membrane-rack.png" unit={getUnit('A01')} />
-          <EquipmentSprite id="C02" label="Membrane Stage 1" imageSrc="/assets/equipment/ro-membrane-rack.png" unit={getUnit('C02')} />
-          <EquipmentSprite id="E03" label="Membrane Stage 2" imageSrc="/assets/equipment/ro-membrane-rack.png" unit={getUnit('E03')} />
-          <EquipmentSprite id="G03" label="Product Transfer" imageSrc="/assets/equipment/hp-feed-pump.png" unit={getUnit('G03')} />
+          <SpritePlaceholder id="A01" label="Pre-Filter A" unit={getUnit('A01')} />
+          <SpritePlaceholder id="C02" label="Membrane Stage 1" unit={getUnit('C02')} />
+          <SpritePlaceholder id="E03" label="Membrane Stage 2" unit={getUnit('E03')} />
+          <SpritePlaceholder id="G03" label="Product Transfer" unit={getUnit('G03')} />
         </div>
       </div>
     </section>

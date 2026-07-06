@@ -1,4 +1,4 @@
-export type HealthStatus = 'nominal' | 'degraded' | 'critical' | 'offline' | 'unknown';
+export type HealthStatus = 'healthy' | 'watch' | 'alert' | 'unknown';
 export type SourceProvenance = 'measured' | 'modeled';
 
 export interface UnitHealth {
@@ -7,6 +7,13 @@ export interface UnitHealth {
   status: HealthStatus;
   scoreSource: SourceProvenance;
   timestamp: string;
+}
+
+export interface UnitHoverSummary extends UnitHealth {
+  stage3FluxPct: number;
+  recoveryPct: number;
+  lastCipDate: string;
+  stage3FluxSource: SourceProvenance;
 }
 
 export interface ReplayState {

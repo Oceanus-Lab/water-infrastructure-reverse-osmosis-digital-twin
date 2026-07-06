@@ -3,28 +3,32 @@ import { cn } from "@/lib/utils";
 import { StatusBadge } from "./status-badge";
 import { UnitHealth } from "@/lib/types";
 import { useReplayStore } from "@/lib/store/replay-store";
+import { HoverSummaryCard } from "./hover-summary-card";
 
 interface EquipmentSpriteProps {
-  unit: UnitHealth | undefined;
+  unit?: UnitHealth | undefined;
   id: string;
   label: string;
   imageSrc: string;
   className?: string;
+  isDefault?: boolean;
 }
 
-export function EquipmentSprite({ unit, id, label, imageSrc, className }: EquipmentSpriteProps) {
+export function EquipmentSprite({ unit, id, label, imageSrc, className, isDefault }: EquipmentSpriteProps) {
   const { selectedUnitId, setSelectedUnitId } = useReplayStore();
-  const isActive = selectedUnitId === (unit?.id || id);
+  const isActive = isDefault ? (selectedUnitId === null || selectedUnitId === id) : selectedUnitId === (unit?.id || id);
 
   return (
-    <button
-      onClick={() => setSelectedUnitId(unit?.id || id)}
+    <HoverSummaryCard unit={unit}>
+      <button
+        onClick={() => setSelectedUnitId(isDefault ? null : (unit?.id || id))}
+      aria-label={`Inspect ${label}`}
       aria-pressed={isActive}
       className={cn(
         "group flex-shrink-0 w-[220px] flex flex-col p-3 rounded-[20px] transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]",
-        "bg-white border border-border/40 cursor-pointer shadow-sm",
-        "hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] hover:-translate-y-1 hover:border-black/20",
-        isActive && "ring-1 ring-black border-black shadow-md",
+        "bg-white border border-border/40 cursor-pointer",
+        !isActive && "hover:border-border/80 hover:bg-black/5",
+        isActive && "ring-1 ring-primary/40 border-primary bg-primary/5",
         className
       )}
     >
@@ -46,5 +50,6 @@ export function EquipmentSprite({ unit, id, label, imageSrc, className }: Equipm
         )}
       </div>
     </button>
+    </HoverSummaryCard>
   );
 }

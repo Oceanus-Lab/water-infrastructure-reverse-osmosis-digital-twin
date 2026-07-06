@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Manrope } from "next/font/google";
+import { DM_Sans, DM_Mono } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavHeader } from "@/components/nav-header";
 
-const manrope = Manrope({
+const dmSans = DM_Sans({
   subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const dmMono = DM_Mono({
+  weight: ["400", "500"],
+  subsets: ["latin"],
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
@@ -20,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className={`${manrope.className} h-full flex flex-col overflow-hidden bg-[#FBFBFA]`}>
+      <body className={`${dmSans.variable} ${dmMono.variable} font-sans h-full flex flex-col overflow-hidden bg-background`}>
         <TooltipProvider>
           <NavHeader />
           {children}

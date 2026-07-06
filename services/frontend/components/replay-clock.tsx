@@ -20,11 +20,11 @@ export function ReplayClock() {
   const dateStr = format(parseISO(currentDate), "MMM dd, yyyy");
 
   return (
-    <div className="flex items-center gap-4 bg-white/95 backdrop-blur-md rounded-[24px] px-2 py-2 shadow-[0_4px_24px_rgba(0,0,0,0.06)] border border-white">
+    <div className="flex items-center gap-4 px-2 py-2 drop-shadow-sm">
       <button 
         onClick={() => setIsPlaying(!isPlaying)}
         aria-label={isPlaying ? "Pause simulation" : "Play simulation"}
-        className="w-[42px] h-[42px] flex items-center justify-center rounded-full bg-[#1465c4] text-white hover:bg-[#1054a3] transition-all shadow-md flex-shrink-0 cursor-pointer active:scale-95"
+        className="w-[42px] h-[42px] flex items-center justify-center rounded-[12px] bg-primary text-primary-foreground hover:opacity-90 transition-all flex-shrink-0 cursor-pointer active:scale-95"
       >
         {isPlaying ? <Pause className="size-4 fill-current" /> : <Play className="size-4 fill-current translate-x-[1px]" />}
       </button>

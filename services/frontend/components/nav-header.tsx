@@ -12,11 +12,8 @@ export function NavHeader() {
 
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between px-6 py-3 border-b bg-background">
-      <div className="flex items-center gap-2">
-        <div className="bg-primary/10 p-2 rounded-lg">
-          <Droplet className="text-primary size-5" />
-        </div>
-        <h1 className="text-lg font-bold tracking-tight">RO Digital Twin</h1>
+      <div className="flex items-center gap-2 w-[180px]">
+        {/* Spacer for flex balancing */}
       </div>
       
       <Tabs 
@@ -24,11 +21,11 @@ export function NavHeader() {
         onValueChange={(val) => router.push(`/${val}`)}
         className="hidden md:block"
       >
-        <TabsList className="bg-transparent h-10 border border-border/50 shadow-sm rounded-full p-1">
-          <TabsTrigger value="twin" className="rounded-full px-4 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">Twin</TabsTrigger>
-          <TabsTrigger value="simulation" className="rounded-full px-4 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">Simulation</TabsTrigger>
-          <TabsTrigger value="industry" className="rounded-full px-4 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">Industry</TabsTrigger>
-          <TabsTrigger value="cloud-data" className="rounded-full px-4 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all">Cloud Data</TabsTrigger>
+        <TabsList className="bg-transparent h-10 p-0 flex gap-8">
+          <TabsTrigger value="twin" className="rounded-none px-0 pb-0 border-none !bg-transparent !shadow-none text-muted-foreground data-[state=active]:text-foreground uppercase tracking-wider text-[11px] font-bold">Digital Twin</TabsTrigger>
+          <TabsTrigger value="simulation" className="rounded-none px-0 pb-0 border-none !bg-transparent !shadow-none text-muted-foreground data-[state=active]:text-foreground uppercase tracking-wider text-[11px] font-bold">Physical Simulation</TabsTrigger>
+          <TabsTrigger value="industry" className="rounded-none px-0 pb-0 border-none !bg-transparent !shadow-none text-muted-foreground data-[state=active]:text-foreground uppercase tracking-wider text-[11px] font-bold">Industry Engine</TabsTrigger>
+          <TabsTrigger value="cloud-data" className="rounded-none px-0 pb-0 border-none !bg-transparent !shadow-none text-muted-foreground data-[state=active]:text-foreground uppercase tracking-wider text-[11px] font-bold">Cloud Data</TabsTrigger>
         </TabsList>
       </Tabs>
 
