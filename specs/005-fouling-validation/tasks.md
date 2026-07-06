@@ -9,11 +9,11 @@
 - [x] T001 [US1] Use the 71 real CIP events as ground truth (FR-001)
 - [x] T002 [US1] Per CIP: first-warning lookback on the deviation signal → lead days; robust clean anchor (window 10th pct)
 - [x] T003 [US1] Report catch-rate + lead-time central tendency + spread (median, P25/P75) (FR-003/FR-004)
-- [ ] T004 [US1] Pre-register threshold + sustained-warning min duration BEFORE the run (FR-005/FR-007)
-- [ ] T005 [US1] Report precision / false-alarm rate + recall against the CIP catalog (FR-006)
-- [ ] T006 [US1] Reconcile detected-cycle count vs CIP-label count (FR-017)
-- [ ] T006b [US2] Validate clean-membrane physics baseline error against genuine clean-state operation (FR-008/FR-009)
-- [ ] T006c [US3] Discover and rank most reliable leading indicator dynamically (FR-010/FR-011)
+- [x] T004 [US1] Pre-register threshold + sustained-warning min duration BEFORE the run (FR-005/FR-007)
+- [x] T005 [US1] Report precision / false-alarm rate + recall against the CIP catalog (FR-006)
+- [x] T006 [US1] Reconcile detected-cycle count vs CIP-label count (FR-017)
+- [x] T006b [US2] Validate clean-membrane physics baseline error against genuine clean-state operation (FR-008/FR-009)
+- [x] T006c [US3] Discover and rank most reliable leading indicator dynamically (FR-010/FR-011)
 - [x] T007 [US1] Empty-frame guard (no usable window → safe zero-result, no crash)
 
 ## Phase 2: Source attribution (US2)
@@ -26,13 +26,13 @@
 ## Phase 3: Honesty & Publish
 - [x] T013 Exclude setpoint/temperature-confounded signals — use the normalized ΔP deviation (FR-012)
 - [x] T014 Publish to `ro_simulation.fouling_attribution` (clustered), region-pinned
-- [ ] T015 [P] pytest ≥80%: backtest lead-time, attribution labels, co-candidate emission
-- [ ] T016 Consolidate 003 US5 source-tracing into 005 once placement confirmed (with Abdullah)
+- [x] T015 [P] pytest ≥80%: backtest lead-time, attribution labels, co-candidate emission
+- [x] T016 Consolidate 003 US5 source-tracing into 005 once placement confirmed (with Abdullah)
 
 ## Phase 4: Frontend Integration (FR-014/FR-015)
-- [ ] T017 [API] Expose GET `/api/validation` endpoint in `serving-api/main.py`
-- [ ] T018 [UI] Create `ValidationReportPanel` matching current design system to display benchmarks
-- [ ] T019 [UI] Display baseline errors, lead-time distribution, and precision/recall honesty metrics
+- [x] T017 [API] Expose GET `/api/validation` endpoint in `serving-api/main.py`
+- [x] T018 [UI] Create `ValidationReportPanel` matching current design system to display benchmarks
+- [x] T019 [UI] Display baseline errors, lead-time distribution, and precision/recall honesty metrics
 
 ## Dependencies
 - Depends on 004 (forecast) + 003 (deviation) + 001 (CIP catalog). 005 is the evidence-first gate (FR-016).
