@@ -17,17 +17,26 @@ Data source: the source-tracing CSV outputs by default (runs offline for local d
 Provenance follows the project rule: banks F–G energy = measured, A–E = modeled.
 """
 from __future__ import annotations
+import os
 import pathlib
 import pandas as pd
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 HERE = pathlib.Path(__file__).parent
-DATA = HERE.parent / "source-tracing" / "data"
+# Deployed (Cloud Run) builds only get this directory as build context, so a copy of
+# source-tracing/data is bundled alongside main.py at deploy time. Local dev falls back to
+# the sibling directory so nothing has to be duplicated by hand during development.
+_BUNDLED_DATA = HERE / "data"
+DATA = _BUNDLED_DATA if _BUNDLED_DATA.exists() else HERE.parent / "source-tracing" / "data"
 
 app = FastAPI(title="RO Digital Twin — Serving API", version="0.1.0")
-app.add_middleware(  # let the Next.js dev server call us
-    CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+
+_default_origins = "http://localhost:3000,http://127.0.0.1:3000"
+_allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware, allow_origins=_allowed_origins,
     allow_methods=["GET"], allow_headers=["*"],
 )
 
