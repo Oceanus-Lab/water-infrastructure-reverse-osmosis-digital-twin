@@ -1,0 +1,9 @@
+# Cloud Run source-upload ignore list.
+#
+# IMPORTANT: this file exists specifically so `gcloud run deploy --source` does NOT fall back
+# to using .gitignore as its ignore list. .gitignore excludes data/ (regenerable CSVs we don't
+# commit) — but the deployed container MUST include data/, or every endpoint reads empty
+# DataFrames. Keep data/ OUT of this file.
+__pycache__/
+*.pyc
+.pytest_cache/

@@ -115,6 +115,15 @@ def fleet(date: str = Query(...)):
 def inspection(unit_id: str, date: str = Query(...)):
     readings = _csv("readings.csv")
     econ = _csv("economics.csv")
+    if readings.empty:  # no data available — return an all-null shape rather than crashing
+        src = _measured(unit_id)
+        return {
+            "unitId": unit_id, "timestamp": date,
+            "flux": {"value": None, "source": src},
+            "pressureDrop": {"value": None, "source": "measured"},
+            "energyUsage": {"value": None, "source": src},
+            "daysSinceClean": 0,
+        }
     u = readings[(readings["unit_id"] == unit_id) & (readings["reading_date"] <= date)].sort_values("reading_date")
     last = u.iloc[-1] if not u.empty else None
     
@@ -269,6 +278,32 @@ def get_anomaly(unit_id: str, date: str = Query(...)):
         return anomalies_list
     except:
         return []
+
+
+@app.get("/api/env")
+def environment(date: str = Query(...)):
+    """Environmental context for the given replay date.
+
+    ambientTemperatureC is the fleet-wide mean over the last 7 reading-dates of the plant's
+    feed-water temperature (temp_c) — the only temperature signal in the dataset, used as an
+    ambient proxy. Electricity cost and grid carbon are documented constants: the EIA/grid
+    enrichment joins in docs/02-data-pipeline.md are not present in the source-tracing outputs.
+    """
+    readings = _csv("readings.csv")
+    ambient = 22.5
+    if not readings.empty and "temp_c" in readings.columns:
+        past = readings[readings["reading_date"] <= date]
+        if not past.empty:
+            last7 = sorted(past["reading_date"].unique())[-7:]
+            recent = past[past["reading_date"].isin(last7)]
+            if recent["temp_c"].notna().any():
+                ambient = round(float(recent["temp_c"].mean()), 1)
+    return {
+        "date": date,
+        "electricityCostUsdPerKwh": 0.12,
+        "gridCarbonIntensityKgPerKwh": 0.35,
+        "ambientTemperatureC": ambient,
+    }
 
 
 @app.get("/api/validation")
