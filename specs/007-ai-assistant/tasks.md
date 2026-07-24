@@ -204,3 +204,28 @@ Phase 9 → Phase 13 (docs)
 - **Agents API**: Control Plane endpoint `https://aiplatform.googleapis.com/v1beta1/projects/${PROJECT}/locations/global/agents`. Agent creation is an LRO — poll until `"done": true`.
 - **update_mask required**: Any PATCH to the agent resource must include `?update_mask=<field>` to avoid overwriting other config.
 - **Interactions API**: Use `gemini-interactions-api` skill for Data Plane conversation execution (multi-turn, streaming, HITL) — see `../gemini-interactions-api/SKILL.md`.
+
+---
+
+## Phase 14: Convergence
+
+> Appended by `/speckit-converge` on 2026-07-15. These trace gaps between the spec/plan/constitution
+> and the current code, discovered after the live assistant path was exercised: the ADK agent is
+> blocked by a Gemini Enterprise per-day interaction quota, so the functional path is the semantic
+> cache + honest fallback (see `docs/11-agent-enterprise-quota.md`). The task artifacts (T001–T069)
+> exist, but several runtime acceptance criteria are unmet because the agent cannot serve.
+
+> **Resolution (2026-07-15, `/speckit-implement`):** Each item's primary action is gated on the
+> external interaction quota, which Google controls and which is not self-service adjustable
+> (re-confirmed live). Where a task offered a document/scope/justify branch, that branch was taken
+> and recorded in `spec.md` → "Current Implementation Status" and `docs/11-agent-enterprise-quota.md`.
+> T071/T072/T074 remain functionally deferred until the quota is raised; they are marked done only
+> in the sense that the scope decision is now recorded, not that live behavior was verified.
+
+- [X] T070 Enforce the no-bare-number / evidence contract on the actually-delivered answer path (`services/frontend/app/api/agent/stream/route.ts` cache + fallback responses), or document it as an explicit trust boundary where seeded answers are pre-validated per FR-006/FR-007/FR-008 (partial) — resolved: documented as trust boundary in spec Current Implementation Status
+- [X] T071 Re-run the SC-010/SC-011 latency verification (`specs/007-ai-assistant/eval/latency_check.sh`, Cloud Trace) against a reachable agent, or record the SLOs as pending until the interaction quota is resolved — currently every interaction returns 429 per SC-010/SC-011 (partial) — resolved: SLOs recorded as deferred pending quota
+- [X] T072 Restore live multi-capability orchestration at runtime (blocked by the agent quota — pursue the options in `docs/11-agent-enterprise-quota.md`), or explicitly scope the current cache-only behavior as the MVP in `spec.md`, per FR-003/FR-004/SC-002 (partial) — resolved: cache-first scoped as current MVP in spec
+- [X] T073 Move the semantic-cache question embedding into BigQuery (`AI.GENERATE_EMBEDDING`) instead of the client-side `ai.models.embedContent` call in `stream/route.ts`, or record the deviation with justification, per Constitution Principle I and plan decision T049 (contradicts) — resolved: deviation justified in spec (seed/lookup model-consistency)
+- [X] T074 Verify the HITL `record_decision` approve/dismiss write path end-to-end once the agent is reachable, or exclude it from the cache-only scope — cached answers carry no proposal and the approve/dismiss routes depend on the quota-blocked agent, per FR-014/FR-015 (partial) — resolved: excluded from cache-only scope, deferred pending quota
+- [X] T075 Reconcile this session's quota-mitigation additions — `services/frontend/scripts/seed-qa-cache.mjs`, the honest rate-limited fallback, and the greeting/help handler in `stream/route.ts` — into `spec.md`/`plan.md` as documented behavior, or justify/remove them (unrequested) — resolved: documented in spec Current Implementation Status
+- [X] T076 Regenerate the seeded cache answers from the evidence-composer (so they track the live data), or scope them to a fixed demo date — they are hand-authored at replay date 2021-01-13 and drift as the replay clock moves, per FR-006/FR-009 (partial) — resolved: scoped to fixed demo date 2021-01-13 in seed-qa-cache.mjs

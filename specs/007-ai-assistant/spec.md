@@ -189,3 +189,29 @@ The assistant informs decisions; it never makes them for the plant. It is read-o
 - Q: How does the operator approve a proposed record-writing action? → A: Option A — Inline Approve / Dismiss chip rendered at the bottom of the proposal message bubble; one tap approves (fires gated `record_decision` tool), one tap dismisses without writing.
 - Q: Are the latency targets (< 5 s Q&A, < 15 s simulation) contractual or aspirational? → A: Option A — Contractual acceptance gates (SC-010/SC-011). < 5 s P95 for single-capability Q&A; < 15 s P95 for multi-capability/simulation; < 1 s P95 for semantic-cache hits. Verified via `adk eval` + Cloud Trace.
 - Q: How long is conversation history retained? → A: Option B — Session-scoped only (Agent Runtime Session lifetime). Cross-session persistence via Memory Bank facts only (preferences, plant facts, cost overrides) — no raw transcript storage. Approved decisions written durably only via gated `record_decision` tool.
+
+## Current Implementation Status (2026-07-15)
+
+The full ADK multi-agent (T001–T069) is built, but the deployed `ro-assistant` agent is blocked
+by a Gemini Enterprise per-day interaction quota (`interaction_throughput_bytes`) that is not
+self-service adjustable and not visible in the standard Cloud Console quota UI. See
+[docs/11-agent-enterprise-quota.md](../../docs/11-agent-enterprise-quota.md). Consequently the
+**current functional scope is cache-first**, delivered by `services/frontend/app/api/agent/stream/route.ts`:
+
+- **Greeting / help intent** → answered locally with a capability intro (no agent call).
+- **Seeded questions** (the UI suggested prompts + core diagnostics, in `ro_embeddings.qa_cache`,
+  populated by `services/frontend/scripts/seed-qa-cache.mjs`) → answered from BigQuery vector
+  search, with each figure carrying its evidence and measured/modeled label as authored. These
+  seeded answers are the **pre-validated evidence surface** for FR-006/FR-007/FR-008 on the live
+  path; the runtime `after_model` no-bare-number gate applies only when the agent itself serves.
+- **Novel questions** → the agent is attempted, and on its `429` the route falls back to the
+  cache and then to an honest "temporarily rate-limited" message — never a fabricated figure
+  (honors FR-010).
+
+**Deferred until the interaction quota is raised** (tracked in `tasks.md` Phase 14): live
+multi-capability orchestration (FR-003/FR-004/SC-002), the SC-010/SC-011 latency verification,
+and end-to-end verification of the HITL `record_decision` write path (FR-014/FR-015). The
+semantic-cache embedding is computed client-side via `text-embedding-005` (rather than in-SQL
+`AI.GENERATE_EMBEDDING`) so seed and lookup stay on an identical model/version — a deliberate
+deviation from Constitution Principle I, justified by the tiny per-question volume and the
+correctness risk of a seed/lookup model mismatch.
