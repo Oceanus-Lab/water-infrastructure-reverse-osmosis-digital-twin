@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { FleetSummaryPanel } from "./inspection/fleet-summary-panel";
 import { UnitDetailSection } from "./inspection/unit-detail-section";
 import { AlertsFeed } from "./inspection/alerts-feed";
-import { AIAssistantPanel } from "./inspection/ai-assistant-panel";
 import { PhysicsDeviationPanel } from "./inspection/physics-deviation-panel";
 import { EarlyWarningPanel } from "./inspection/early-warning-panel";
 
@@ -108,8 +107,6 @@ export function InspectionDrawer() {
             <PhysicsDeviationPanel deviations={physicsDeviations} />
 
             <EarlyWarningPanel forecast={forecast} anomalies={anomalies} />
-
-            <AIAssistantPanel />
           </div>
         </div>
       )}
