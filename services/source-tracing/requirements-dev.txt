@@ -1,0 +1,9 @@
+# Dev + CI dependencies for the source-tracing backend (specs 003–007).
+# The heavy physics stack (WaterTAP/Pyomo/IDAES) is intentionally NOT here:
+# deviation.py degrades gracefully to the analytical path when it is absent,
+# so tests and CI run without it.
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+pytest>=8.0
+ruff>=0.6

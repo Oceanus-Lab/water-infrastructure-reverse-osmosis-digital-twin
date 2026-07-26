@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: lint + tests (source-tracing backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -r services/source-tracing/requirements-dev.txt
+
+      - name: Lint (ruff — real errors only)
+        run: ruff check services/source-tracing pipeline services/replay
+
+      - name: Tests (pytest)
+        run: pytest -q services/source-tracing/tests pipeline/tests services/replay/tests
+
+      - name: Model-quality gate (committed backtest vs baseline)
+        run: |
+          python services/source-tracing/eval/metrics_gate.py \
+            --report services/source-tracing/data/validation_report.json \
+            --baseline services/source-tracing/eval/baseline_metrics.json
