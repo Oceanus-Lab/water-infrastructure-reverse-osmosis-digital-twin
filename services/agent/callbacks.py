@@ -20,7 +20,7 @@ import json
 import re
 from typing import Any
 
-from services.agent.tools import _ACTUATION_DENYLIST, _validate_unit_id, ActuationBlockedError, GovernanceError
+from tools import _ACTUATION_DENYLIST, _validate_unit_id, ActuationBlockedError, GovernanceError
 
 # ── Regex to catch bare numeric tokens in LLM output ──────────────────────
 # Matches patterns like: 42.5, $1,234, 0.92, 15 kWh, 85%
@@ -65,22 +65,23 @@ def after_model_callback(
     issues: list[str] = []
     proposals: list[dict] = []
 
-    # 1. Extract all numeric tokens from tool results (these are allowed)
-    allowed_values: set[str] = set()
+    # 1. Collect all numeric VALUES from tool results (the only surfaceable figures)
+    allowed_values: list[float] = []
     for result in tool_results_in_session:
-        # Enforce SC-003: if capability result lacks evidence, do not allow its figures
-        if isinstance(result, dict) and "capability" in result:
-            if result.get("evidence") is None:
-                continue
-        _extract_numerics_from_result(result, allowed_values)
+        # Enforce SC-003: if a capability result lacks evidence, its figures are NOT allowed
+        if isinstance(result, dict) and "capability" in result and result.get("evidence") is None:
+            continue
+        _collect_numeric_values(result, allowed_values)
 
-    # 2. Find bare numbers in model output
-    bare_candidates = _BARE_NUMBER_RE.findall(model_output_text)
+    # 2. Every bare number must be traceable (within rounding tolerance) to a tool value
     bare_numbers: list[str] = []
-    for candidate in bare_candidates:
-        # Allow if traceable to a tool result
+    for candidate in _BARE_NUMBER_RE.findall(model_output_text):
         cleaned = candidate.replace(",", "").replace("$", "").strip()
-        if cleaned not in allowed_values:
+        try:
+            value = float(cleaned)
+        except ValueError:
+            continue
+        if not _is_traceable(value, allowed_values):
             bare_numbers.append(candidate)
 
     if bare_numbers:
@@ -115,12 +116,18 @@ def after_model_callback(
         )
         model_output_text += tension_block
 
+    passed = len(issues) == 0
     return {
-        "passed": len(issues) == 0,
+        "passed": passed,
         "issues": issues,
         "bare_numbers_found": bare_numbers,
         "proposals": proposals,
-        "sanitized_output": model_output_text,  # output updated with tension block if applicable
+        # ENFORCE (Constitution Principle II): a governance violation WITHHOLDS the output —
+        # the ungrounded text is never surfaced; the turn must be regenerated with sourced
+        # figures only. Previously this returned the raw text (flag-only, no enforcement).
+        "action": "accept" if passed else "regenerate",
+        "blocked_reason": None if passed else "; ".join(issues),
+        "sanitized_output": model_output_text if passed else None,
     }
 
 
@@ -179,18 +186,28 @@ def before_tool_callback(
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-def _extract_numerics_from_result(obj: Any, out: set[str]) -> None:
-    """Recursively extract all numeric string representations from a result dict."""
+def _collect_numeric_values(obj: Any, out: list[float]) -> None:
+    """Recursively collect every numeric value from a tool result."""
+    if isinstance(obj, bool):
+        return  # bool is a subclass of int — never a figure
     if isinstance(obj, dict):
         for v in obj.values():
-            _extract_numerics_from_result(v, out)
+            _collect_numeric_values(v, out)
     elif isinstance(obj, list):
         for item in obj:
-            _extract_numerics_from_result(item, out)
+            _collect_numeric_values(item, out)
     elif isinstance(obj, (int, float)):
-        out.add(str(obj))
-        out.add(f"{obj:.2f}")
-        out.add(f"{obj:.4f}")
+        out.append(float(obj))
+
+
+def _is_traceable(value: float, allowed: list[float]) -> bool:
+    """A figure is traceable if it matches a tool value within rounding tolerance
+    (1% relative, or 0.01 absolute) — so an honest round of 14.234 -> 14.2 is allowed,
+    but a fabricated 99.9 with no source is not."""
+    for a in allowed:
+        if abs(value - a) <= max(0.01, 0.01 * abs(a)):
+            return True
+    return False
 
 
 def _new_id() -> str:
