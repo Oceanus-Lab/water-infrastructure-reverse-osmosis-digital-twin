@@ -12,7 +12,9 @@ Tool transport: BigQuery MCP server for BQ queries.
 """
 from __future__ import annotations
 
+import ast
 import json
+import operator
 import os
 import re
 import uuid
@@ -47,21 +49,26 @@ _ACTUATION_DENYLIST: frozenset[str] = frozenset({
 })
 
 # ── Unit ID allowlist ──────────────────────────────────────────────────────
-_UNIT_RE = re.compile(r"^[A-G]-0[1-3]$")
+_UNIT_RE = re.compile(r"^[A-G]0[1-3]$")
 
 def _validate_unit_id(unit_id: str) -> str:
-    """Sanitise unit_id to prevent injection (T010)."""
-    clean = unit_id.strip().upper()
+    """Normalise + validate a unit_id against the real ro_curated.unit_readings format.
+
+    The table stores units as 'A01'..'G03' (no separator). Accept a hyphen/space/underscore
+    variant ('A-01') for convenience, normalise to the canonical 'A01', and reject anything
+    else — this is both an injection guard (T010) and a data-contract check.
+    """
+    clean = re.sub(r"[\s_-]", "", unit_id.strip().upper())
     if not _UNIT_RE.match(clean):
         raise ValueError(
-            f"Invalid unit_id '{unit_id}' — must match [A-G]-0[1-3] (e.g. 'F-03')."
+            f"Invalid unit_id '{unit_id}' — must be one of A01..G03 (e.g. 'F03')."
         )
     return clean
 
 
 # ── Tool: query_bigquery ───────────────────────────────────────────────────
 
-def query_bigquery(sql: str) -> dict[str, Any]:
+def query_bigquery(sql: str, params: list | None = None) -> dict[str, Any]:
     """
     T006 — Execute a read-only BigQuery SQL query and return rows + schema.
 
@@ -80,7 +87,8 @@ def query_bigquery(sql: str) -> dict[str, Any]:
         )
 
     bq = bigquery.Client(project=_PROJECT)
-    job = bq.query(sql)
+    job_config = bigquery.QueryJobConfig(query_parameters=params) if params else None
+    job = bq.query(sql, job_config=job_config)
     rows = list(job.result())
     schema = [{"name": f.name, "type": f.field_type} for f in job.result().schema]
 
@@ -94,48 +102,73 @@ def query_bigquery(sql: str) -> dict[str, Any]:
 
 # ── Tool: detect_anomaly ───────────────────────────────────────────────────
 
+# Real numeric columns on ro_curated.unit_readings that anomaly detection may target.
+_ANOMALY_SIGNALS: frozenset[str] = frozenset({
+    "unit_n_delta_p", "unit_recovery", "percent_ec_removal",
+    "unit_dp", "temp_c", "turb", "perm_ec", "ec",
+})
+
+
 def detect_anomaly(
     unit_id: str,
     signal: str,
     date_range: dict[str, str],  # {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}
+    sigma: float = 3.0,
 ) -> dict[str, Any]:
     """
-    T006 — Run BigQuery AI.DETECT_ANOMALIES on a unit signal.
+    T006 — Flag readings that deviate abnormally from the unit's own distribution.
+
+    Model-less by design: a per-unit ``mean ± sigma·std`` band computed in-SQL, mirroring
+    the offline twin (forecast_anomaly.py) and consistent with the no-training / TimesFM
+    BigQuery-AI approach used for forecasting. No trained ML model is required, so it works
+    without a provisioned per-unit anomaly model.
+
+    ``signal`` is validated against an allowlist of real columns; every value is passed as a
+    query parameter (no string interpolation of caller input).
 
     Returns evidence for AnomalyEvidence: deviating_signal + magnitude_vs_baseline.
     """
     unit_id = _validate_unit_id(unit_id)
+    if signal not in _ANOMALY_SIGNALS:
+        raise ValueError(f"Unknown signal '{signal}'. Allowed: {sorted(_ANOMALY_SIGNALS)}.")
     start = date_range.get("start", "2019-01-01")
-    end   = date_range.get("end",   "2021-01-13")
+    end = date_range.get("end", "2021-01-13")
 
+    # signal is allowlisted → safe to inline as an identifier; all values are @parameters.
     sql = f"""
-    SELECT
-      date,
-      {signal}_value   AS value,
-      is_anomaly,
-      lower_bound,
-      upper_bound,
-      (CAST({signal}_value AS FLOAT64) - CAST(lower_bound AS FLOAT64)) AS magnitude_vs_baseline
-    FROM
-      ML.DETECT_ANOMALIES(
-        MODEL `{_PROJECT}.{_BQ_CURATED}.anomaly_model_{unit_id.replace('-','_')}`,
-        STRUCT(0.9 AS contamination_fraction),
-        (SELECT date, {signal} AS {signal}_value
-         FROM `{_PROJECT}.{_BQ_CURATED}.unit_readings`
-         WHERE unit_id = '{unit_id}'
-           AND date BETWEEN '{start}' AND '{end}')
-      )
-    WHERE is_anomaly = TRUE
+    WITH s AS (
+      SELECT reading_date AS date, CAST({signal} AS FLOAT64) AS value
+      FROM `{_PROJECT}.{_BQ_CURATED}.unit_readings`
+      WHERE unit_id = @unit_id AND reading_date BETWEEN @start AND @end
+        AND {signal} IS NOT NULL
+    ),
+    b AS (
+      SELECT date, value, AVG(value) OVER () AS mean, STDDEV_SAMP(value) OVER () AS sd
+      FROM s
+    )
+    SELECT date, value,
+      mean - @sigma * sd AS lower_bound,
+      mean + @sigma * sd AS upper_bound,
+      (value < mean - @sigma * sd OR value > mean + @sigma * sd) AS is_anomaly,
+      SAFE_DIVIDE(ABS(value - mean), sd) AS magnitude_vs_baseline
+    FROM b
+    WHERE value < mean - @sigma * sd OR value > mean + @sigma * sd
     ORDER BY date DESC
     LIMIT 20
     """
-
-    result = query_bigquery(sql)
+    params = [
+        bigquery.ScalarQueryParameter("unit_id", "STRING", unit_id),
+        bigquery.ScalarQueryParameter("start", "DATE", start),
+        bigquery.ScalarQueryParameter("end", "DATE", end),
+        bigquery.ScalarQueryParameter("sigma", "FLOAT64", float(sigma)),
+    ]
+    result = query_bigquery(sql, params)
     return {
         **result,
         "capability": "anomaly",
         "unit_id": unit_id,
         "signal": signal,
+        "method": f"mean+/-{sigma}sigma (model-less, no trained model required)",
         "evidence_type": "AnomalyEvidence",
     }
 
@@ -227,23 +260,44 @@ def search_docs(query: str, top_k: int = 5) -> list[dict[str, Any]]:
 
 # ── Tool: run_calculation ──────────────────────────────────────────────────
 
+# ── Safe arithmetic evaluator (no eval) ─────────────────────────────────────
+_SAFE_BINOPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+                ast.Div: operator.truediv, ast.Mod: operator.mod}
+_SAFE_UNARY = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+
+
+def _safe_arith(expression: str) -> float:
+    """Evaluate a pure arithmetic expression without eval().
+
+    Allows numbers, + - * / %, parentheses and unary +/-. The power operator (**) is
+    intentionally unsupported: it is a cheap CPU/memory DoS vector (e.g. 2**9**9**9) that
+    was reachable through the old regex + eval() path.
+    """
+    def _ev(node: ast.AST) -> float:
+        if isinstance(node, ast.Expression):
+            return _ev(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_BINOPS:
+            return _SAFE_BINOPS[type(node.op)](_ev(node.left), _ev(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_UNARY:
+            return _SAFE_UNARY[type(node.op)](_ev(node.operand))
+        raise ValueError(f"unsupported expression element: {type(node).__name__}")
+
+    return float(_ev(ast.parse(expression, mode="eval")))
+
+
 def run_calculation(expression: str) -> dict[str, Any]:
     """
-    T006 — Evaluate a simple arithmetic expression in a sandboxed context.
+    T006 — Evaluate a simple arithmetic expression safely (no eval, no power operator).
 
-    Restricted to numeric calculations only — no imports, no exec of arbitrary code.
-    Used by Economics sub-agent for delta-economics computations.
+    Restricted to numeric arithmetic — no names, calls, imports, or exec. Used by the
+    Economics sub-agent for delta-economics computations.
     """
-    # Allow only safe arithmetic characters
-    if not re.match(r"^[0-9\s\+\-\*\/\(\)\.\,eE\_]+$", expression):
-        raise GovernanceError(
-            f"run_calculation: expression '{expression}' contains disallowed characters. "
-            "Only numeric arithmetic is permitted."
-        )
     try:
-        result = eval(expression, {"__builtins__": {}}, {})  # noqa: S307
-        return {"expression": expression, "result": float(result), "capability": "calculation"}
-    except Exception as exc:
+        result = _safe_arith(expression)
+        return {"expression": expression, "result": result, "capability": "calculation"}
+    except (ValueError, SyntaxError, ZeroDivisionError, TypeError, RecursionError) as exc:
         return {"expression": expression, "error": str(exc), "result": None, "capability": "calculation"}
 
 
