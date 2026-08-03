@@ -17,10 +17,11 @@ Data source: the source-tracing CSV outputs by default (runs offline for local d
 Provenance follows the project rule: banks F–G energy = measured, A–E = modeled.
 """
 from __future__ import annotations
+import ast
 import os
 import pathlib
 import pandas as pd
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 HERE = pathlib.Path(__file__).parent
@@ -36,14 +37,31 @@ _default_origins = "http://localhost:3000,http://127.0.0.1:3000"
 _allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", _default_origins).split(",") if o.strip()]
 
 app.add_middleware(
+    # POST is required: /api/economics/{unit_id}/override is a POST, and with a GET-only
+    # allow list the browser preflight fails, so the economics override silently never works.
     CORSMiddleware, allow_origins=_allowed_origins,
-    allow_methods=["GET"], allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["*"],
 )
 
 
 def _csv(name: str) -> pd.DataFrame:
     f = DATA / name
     return pd.read_csv(f) if f.exists() else pd.DataFrame()
+
+
+def _literal(value, fallback: list) -> list:
+    """Parse a stringified list out of a CSV cell.
+
+    Never `eval()` here — these cells come from files on disk, so eval would execute whatever
+    the pipeline (or anything that can write to data/) put in them.
+    """
+    if not isinstance(value, str):
+        return value if isinstance(value, list) else fallback
+    try:
+        parsed = ast.literal_eval(value)
+    except (ValueError, SyntaxError):
+        return fallback
+    return parsed if isinstance(parsed, list) else fallback
 
 
 def _measured(unit_id: str) -> str:
@@ -84,7 +102,11 @@ def _get_active_cycles(date: str) -> dict:
 def timeline():
     r = _csv("readings.csv")
     if r.empty:
-        return ["2019-01-01", "2021-01-13"]
+        # Do NOT fall back to the OCWD date range here. Returning it when readings.csv is
+        # missing makes an API with no data behind it look fully loaded — the deployed
+        # service did exactly that while every other endpoint returned null. Fail loudly
+        # instead so a missing data/ bundle is visible rather than disguised.
+        raise HTTPException(status_code=503, detail="readings.csv unavailable — no timeline to serve")
     return [str(r["reading_date"].min())[:10], str(r["reading_date"].max())[:10]]
 
 
@@ -247,9 +269,9 @@ def get_forecast(unit_id: str, date: str = Query(...)):
         "forecastBandDays": r["forecast_band_days"] if has_evidence else None,
         "ciLower": r.get("ci_lower") if pd.notna(r.get("ci_lower")) else None,
         "ciUpper": r.get("ci_upper") if pd.notna(r.get("ci_upper")) else None,
-        "forecastDrivers": eval(r.get("forecast_drivers", "['incomplete evidence']")) if isinstance(r.get("forecast_drivers"), str) else r.get("forecast_drivers", ["incomplete evidence"]),
+        "forecastDrivers": _literal(r.get("forecast_drivers"), ["incomplete evidence"]),
         "foulingOnsetScore": r.get("fouling_onset_score"),
-        "featureAttribution": eval(r.get("feature_attribution", "['unknown']")) if isinstance(r.get("feature_attribution"), str) else r.get("feature_attribution", ["unknown"])
+        "featureAttribution": _literal(r.get("feature_attribution"), ["unknown"]),
     }
 
 
@@ -271,13 +293,8 @@ def get_anomaly(unit_id: str, date: str = Query(...)):
     anomalies_str = unit_fc.iloc[0].get("anomalies", "[]")
     if pd.isna(anomalies_str):
         return []
-    
-    try:
-        import ast
-        anomalies_list = ast.literal_eval(anomalies_str)
-        return anomalies_list
-    except:
-        return []
+
+    return _literal(anomalies_str, [])
 
 
 @app.get("/api/env")
