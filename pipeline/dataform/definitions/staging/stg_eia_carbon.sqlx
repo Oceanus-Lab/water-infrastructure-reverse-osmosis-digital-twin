@@ -11,7 +11,7 @@ WITH mix_data AS (
     fuel_type,
     SUM(generation_mwh) as mwh
   FROM
-    `spatial-cat-489006-a4.ro_raw.eia_generation_mix_raw`
+    `${dataform.projectConfig.defaultDatabase}`.ro_raw.eia_generation_mix_raw
   GROUP BY 1, 2, 3
 ),
 total_gen AS (
