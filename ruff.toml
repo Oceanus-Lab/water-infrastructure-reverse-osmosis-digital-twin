@@ -1,0 +1,7 @@
+# Conservative first-pass lint: real errors only (syntax, undefined names,
+# broken f-strings, assert-on-tuple). Style rules can be adopted incrementally
+# by widening this select set once the codebase is clean under it.
+line-length = 120
+
+[lint]
+select = ["E9", "F63", "F7", "F82"]

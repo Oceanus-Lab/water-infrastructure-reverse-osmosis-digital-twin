@@ -119,8 +119,10 @@ def test_extra_sec_monotonic_and_zero_floor():
 # ── 005 backtest empty-frame guard ────────────────────────────────
 def test_backtest_no_cip_events_does_not_crash():
     df = make_cycle(n=40)  # cip all False → no events
-    out = val.backtest(df)
-    assert out["cip_events_tested"] == 0 and out["catch_rate_pct"] == 0
+    # API is cip_events() + evaluate_signal() (there is no single backtest()).
+    assert val.cip_events(df).empty
+    res = val.evaluate_signal(df, "unit_n_delta_p", 3.0)
+    assert res["tps"] == 0 and res["fps"] == 0 and res["fns"] == 0
 
 
 # ── 007 assistant: no bare 'nan', no self-contradiction ───────────

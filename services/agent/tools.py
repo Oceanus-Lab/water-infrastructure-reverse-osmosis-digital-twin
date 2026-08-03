@@ -18,8 +18,10 @@ import re
 import uuid
 from typing import Any
 
-import requests
-from google.cloud import bigquery
+# google-cloud-bigquery and requests are imported lazily inside the functions that use them
+# (see _bq_client below). The governance gates — denylist, unit-id allowlist, callbacks — are
+# pure logic and are what the test suite exercises; a top-level SDK import made collecting
+# tests/test_assistant.py fail unless the whole GCP SDK was installed.
 
 # ── Governance errors ──────────────────────────────────────────────────────
 
@@ -45,6 +47,14 @@ _ACTUATION_DENYLIST: frozenset[str] = frozenset({
     "open_valve", "close_valve", "set_recovery", "scada_command",
     "plc_write", "actuate",
 })
+
+
+def _bq_client():
+    """BigQuery client, constructed on first use so importing this module needs no GCP SDK."""
+    from google.cloud import bigquery
+
+    return bigquery.Client(project=_PROJECT)
+
 
 # ── Unit ID allowlist ──────────────────────────────────────────────────────
 _UNIT_RE = re.compile(r"^[A-G]-0[1-3]$")
@@ -79,7 +89,7 @@ def query_bigquery(sql: str) -> dict[str, Any]:
             "Use record_decision (HITL-gated) for approved writes."
         )
 
-    bq = bigquery.Client(project=_PROJECT)
+    bq = _bq_client()
     job = bq.query(sql)
     rows = list(job.result())
     schema = [{"name": f.name, "type": f.field_type} for f in job.result().schema]
@@ -156,6 +166,8 @@ def simulate_watertap(
     payload = {"unit_id": unit_id, **params}
 
     try:
+        import requests
+
         resp = requests.post(
             f"{_WATERTAP_URL}/predict",
             json=payload,
@@ -163,7 +175,7 @@ def simulate_watertap(
         )
         resp.raise_for_status()
         data = resp.json()
-    except requests.RequestException as exc:
+    except Exception as exc:  # requests.RequestException (imported lazily above)
         return {
             "capability": "simulation",
             "unit_id": unit_id,
@@ -279,7 +291,7 @@ def record_decision(
                 "The assistant NEVER writes actuation records. (FR-013)"
             )
 
-    bq = bigquery.Client(project=_PROJECT)
+    bq = _bq_client()
     table_id = f"{_PROJECT}.{_BQ_SERVING}.decision_log"
 
     row = {
@@ -326,7 +338,7 @@ def save_memory_fact(
     if unit_id:
         unit_id = _validate_unit_id(unit_id)
 
-    bq = bigquery.Client(project=_PROJECT)
+    bq = _bq_client()
     table_id = f"{_PROJECT}.{_BQ_SERVING}.agent_memory"
 
     row = {
