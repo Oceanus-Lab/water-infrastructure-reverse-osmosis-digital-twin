@@ -96,6 +96,18 @@ def _literal(value, fallback: list) -> list:
     return parsed if isinstance(parsed, list) else fallback
 
 
+def _as_date(date: str) -> str:
+    """Normalise a `?date=` parameter to YYYY-MM-DD.
+
+    The frontend's replay clock stores an ISO instant ("2019-01-01T00:00:00Z") and passes it
+    straight through. Everything here compares against reading_date, which is a naive daily
+    date: the string form silently matched the wrong rows, and pd.Timestamp() on the tz-aware
+    form raised "Cannot compare tz-naive and tz-aware" — a 500 on every request the deployed
+    UI made, which then fell back to mock data with only the MOCK DATA badge to show for it.
+    """
+    return (date or "")[:10]
+
+
 def _measured(unit_id: str) -> str:
     # banks F–G have metered energy; A–E are WaterTAP-modeled (matches frontend mock + Constitution IV)
     return "measured" if unit_id[:1] in ("F", "G") else "modeled"
@@ -278,6 +290,7 @@ def timeline():
 
 @app.get("/api/fleet")
 def fleet(date: str = Query(...)):
+    date = _as_date(date)
     out = []
     for uid in _unit_ids():
         r = _forecast_as_of(uid, date)   # as-of, not the whole-cycle row from forecasts.csv
@@ -291,6 +304,7 @@ def fleet(date: str = Query(...)):
 
 @app.get("/api/inspection/{unit_id}")
 def inspection(unit_id: str, date: str = Query(...)):
+    date = _as_date(date)
     readings = _csv("readings.csv")
     econ = _csv("economics.csv")
     if readings.empty:  # no data available — return an all-null shape rather than crashing
@@ -335,6 +349,7 @@ def inspection(unit_id: str, date: str = Query(...)):
 
 @app.get("/api/alerts")
 def alerts(date: str = Query(...)):
+    date = _as_date(date)
     att = _csv("attributions.csv")
     cycles = _get_active_cycles(date)
     if not cycles:
@@ -377,6 +392,7 @@ def alerts(date: str = Query(...)):
 
 @app.get("/api/physics-deviation/{unit_id}")
 def physics_deviation(unit_id: str, date: str = Query(...)):
+    date = _as_date(date)
     devs = _csv("deviations.csv")
     if devs.empty:
         return []
@@ -402,6 +418,7 @@ def physics_deviation(unit_id: str, date: str = Query(...)):
 
 @app.get("/api/forecast/{unit_id}")
 def get_forecast(unit_id: str, date: str = Query(...)):
+    date = _as_date(date)
     r = _forecast_as_of(unit_id, date)
     if r is None:
         return None
@@ -423,12 +440,14 @@ def get_forecast(unit_id: str, date: str = Query(...)):
 
 @app.get("/api/anomaly/{unit_id}")
 def get_anomaly(unit_id: str, date: str = Query(...)):
+    date = _as_date(date)
     r = _forecast_as_of(unit_id, date)
     return r["anomalies"] if r else []
 
 
 @app.get("/api/env")
 def environment(date: str = Query(...)):
+    date = _as_date(date)
     """Environmental context for the given replay date.
 
     ambientTemperatureC is the fleet-wide mean over the last 7 reading-dates of the plant's
@@ -464,6 +483,7 @@ def validation():
 
 @app.get("/api/economics/{unit_id}")
 def get_economics(unit_id: str, date: str = Query(...)):
+    date = _as_date(date)
     # as-of, not the whole-cycle row from economics.csv. That file holds ONE row per
     # (unit, cycle) computed from the entire cycle, so it reported the end-of-cycle penalty
     # no matter where the timeline sat.
@@ -475,6 +495,7 @@ def get_economics(unit_id: str, date: str = Query(...)):
 
 @app.post("/api/economics/{unit_id}/override")
 def override_economics(unit_id: str, params: dict, date: str = Query(...)):
+    date = _as_date(date)
     readings = _csv("readings.csv")
     cycles = _get_active_cycles(date)
     cyc_id = cycles.get(unit_id)
