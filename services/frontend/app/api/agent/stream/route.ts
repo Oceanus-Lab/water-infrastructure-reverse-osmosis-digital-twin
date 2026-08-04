@@ -3,15 +3,20 @@ import { NextRequest } from 'next/server';
 import { BigQuery } from '@google-cloud/bigquery';
 import { runHarness } from '@/lib/agent/harness';
 
+// One place for the project id. The two qa_cache SQL statements below embedded it as a
+// literal, so on any project other than spatial-cat the semantic cache silently failed to
+// resolve — and that cache IS the mitigation for the agent's preview-tier quota wall
+// (docs/11-agent-enterprise-quota.md). Losing it there means losing the fallback entirely.
+const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'spatial-cat-489006-a4';
+const QA_CACHE = `${PROJECT}.ro_embeddings.qa_cache`;
+
 const ai = new GoogleGenAI({
   enterprise: true,
-  project: process.env.GOOGLE_CLOUD_PROJECT || 'spatial-cat-489006-a4',
+  project: PROJECT,
   location: process.env.GOOGLE_CLOUD_LOCATION || 'global',
 });
 
-const bq = new BigQuery({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT || 'spatial-cat-489006-a4',
-});
+const bq = new BigQuery({ projectId: PROJECT });
 
 // Embedding model for the semantic cache. MUST match the model used to seed qa_cache
 // (scripts/seed-qa-cache.mjs — see docs/11-agent-enterprise-quota.md) or vector distances are
@@ -80,7 +85,7 @@ async function lookupCache(embedding: number[]): Promise<unknown[] | null> {
     const query = `
       SELECT base.answer_json AS answer_json, distance
       FROM VECTOR_SEARCH(
-        TABLE \`spatial-cat-489006-a4.ro_embeddings.qa_cache\`,
+        TABLE \`${QA_CACHE}\`,
         'question_embedding',
         (SELECT @embedding AS question_embedding),
         top_k => 1,
@@ -158,7 +163,7 @@ export async function POST(req: NextRequest) {
           const answerJson = JSON.stringify([messageChunk(full, answerId)]);
           bq.query({
             query: `
-              INSERT INTO \`spatial-cat-489006-a4.ro_embeddings.qa_cache\`
+              INSERT INTO \`${QA_CACHE}\`
               (question_embedding, question_text, answer_json, cached_at, is_time_sensitive)
               VALUES (@embedding, @text, PARSE_JSON(@answer), CURRENT_TIMESTAMP(), FALSE)
             `,
