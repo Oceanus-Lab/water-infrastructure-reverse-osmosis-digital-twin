@@ -18,13 +18,22 @@ Provenance follows the project rule: banks F–G energy = measured, A–E = mode
 """
 from __future__ import annotations
 import ast
+import json
+import math
 import os
 import pathlib
+import sys
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 HERE = pathlib.Path(__file__).parent
+# source-tracing holds the economics model reused by the override endpoint. Added once at
+# import time; it used to be appended to sys.path on every POST.
+sys.path.append(str(HERE.parent / "source-tracing"))
+# economics.unit_economics returns None below this many valid readings — starting the history
+# loop here skips prefixes that can only produce None.
+_MIN_ECON_READINGS = 5
 # Deployed (Cloud Run) builds only get this directory as build context, so a copy of
 # source-tracing/data is bundled alongside main.py at deploy time. Local dev falls back to
 # the sibling directory so nothing has to be duplicated by hand during development.
@@ -44,9 +53,28 @@ app.add_middleware(
 )
 
 
+_CACHE: dict[str, tuple[float, int, pd.DataFrame]] = {}
+
+
 def _csv(name: str) -> pd.DataFrame:
+    """Read a source-tracing CSV, cached on (mtime, size).
+
+    Every endpoint re-parsed its CSVs on each request; deviations.csv alone is ~4 MB, so a
+    single /api/physics-deviation call spent ~40 ms just in read_csv. The stat() keeps a
+    regenerated file (run_all.py) from being served stale — the whole point of the CSVs is
+    that they are rewritten in place.
+    """
     f = DATA / name
-    return pd.read_csv(f) if f.exists() else pd.DataFrame()
+    if not f.exists():
+        _CACHE.pop(name, None)
+        return pd.DataFrame()
+    st = f.stat()
+    hit = _CACHE.get(name)
+    if hit is not None and hit[0] == st.st_mtime and hit[1] == st.st_size:
+        return hit[2]
+    df = pd.read_csv(f)
+    _CACHE[name] = (st.st_mtime, st.st_size, df)
+    return df
 
 
 def _literal(value, fallback: list) -> list:
@@ -154,7 +182,11 @@ def inspection(unit_id: str, date: str = Query(...)):
     if last is not None:
         cyc_id = last["cycle_id"]
         cyc = u[u["cycle_id"] == cyc_id]
-        days_since_clean = int(last["days_since_replacement"] - cyc["days_since_replacement"].min())
+        # From reading_date, not days_since_replacement: that column counts from the last
+        # membrane REPLACEMENT and resets mid-cycle when one is swapped, which made
+        # "days since clean" jump to ~1700 on C01/D01 cycle 4 (see common.cycle_days).
+        _d = pd.to_datetime(cyc["reading_date"])
+        days_since_clean = int((pd.to_datetime(last["reading_date"]) - _d.min()).days)
         e = econ[(econ["unit_id"] == unit_id) & (econ["cycle_id"] == cyc_id)]
         energy = float(e["daily_energy_penalty_usd"].iloc[-1]) if not e.empty else None
 
@@ -325,7 +357,6 @@ def environment(date: str = Query(...)):
 
 @app.get("/api/validation")
 def validation():
-    import json
     f = DATA / "validation_report.json"
     if not f.exists():
         return {}
@@ -343,15 +374,10 @@ def get_economics(unit_id: str, date: str = Query(...)):
     e = econ[(econ["unit_id"] == unit_id) & (econ["cycle_id"] == cyc_id)]
     if e.empty:
         return None
-    
-    import math
-    
+
     def clean_dict(d):
-        for k, v in d.items():
-            if isinstance(v, float) and math.isnan(v):
-                d[k] = None
-        return d
-        
+        return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in d.items()}
+
     history = [clean_dict(row.to_dict()) for _, row in e.iterrows()]
     current = history[-1]
     
@@ -369,33 +395,41 @@ def override_economics(unit_id: str, params: dict, date: str = Query(...)):
     cyc = readings[(readings["unit_id"] == unit_id) & (readings["cycle_id"] == cyc_id) & (readings["reading_date"] <= date)].copy()
     if cyc.empty:
         return {"error": "no cycle data found for date"}
-        
-    import sys
-    sys.path.append(str(HERE.parent / "source-tracing"))
+
     from common import add_deviation
     from economics import unit_economics, PARAMS
-    
+
     cyc = add_deviation(cyc)
-    
+
+    # Validate before computing: unknown keys are rejected rather than silently dropped, and
+    # a non-numeric value used to reach float() unguarded and surface as a 500.
     p = PARAMS.copy()
+    unknown = sorted(set(params) - set(PARAMS))
+    if unknown:
+        raise HTTPException(status_code=422,
+                            detail=f"unknown parameter(s): {unknown}; allowed: {sorted(PARAMS)}")
     for k, v in params.items():
-        if k in p and v is not None:
-            p[k] = float(v)
-            
-    # Compute economics for each prefix of the cycle to build history
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail=f"parameter '{k}' must be a number, got {v!r}")
+        if not math.isfinite(fv) or fv < 0:
+            raise HTTPException(status_code=422, detail=f"parameter '{k}' must be finite and >= 0, got {fv}")
+        p[k] = fv
+
+    # History = economics as of each day of the cycle. This ran unit_economics on every
+    # prefix, so an N-reading cycle re-scanned O(N^2) rows; the sub-frame slicing dominated.
+    # Sorting once and reusing the slices keeps the same output at a fraction of the cost.
     history = []
-    cyc_sorted = cyc.sort_values("days_since_replacement")
-    
-    for i in range(1, len(cyc_sorted) + 1):
-        sub_cyc = cyc_sorted.iloc[:i]
-        res = unit_economics(sub_cyc, p)
+    cyc_sorted = cyc.sort_values("reading_date")
+    for i in range(_MIN_ECON_READINGS, len(cyc_sorted) + 1):
+        res = unit_economics(cyc_sorted.iloc[:i], p)
         if res is not None:
-            import math
-            for k, v in res.items():
-                if isinstance(v, float) and math.isnan(v):
-                    res[k] = None
-            history.append(res)
-            
+            history.append({k: (None if isinstance(v, float) and math.isnan(v) else v)
+                            for k, v in res.items()})
+
     if not history:
         return {"error": "could not calculate economics"}
         
