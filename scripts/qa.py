@@ -297,6 +297,21 @@ def qa_gcp():
         warn(f"{DST_PROJECT} ro_curated not built yet",
              "run Dataform with defaultProject=" + DST_PROJECT)
 
+    # The architecture principle CLAUDE.md calls non-negotiable: forecasting and anomaly
+    # detection happen in BigQuery, in-SQL. These tables are what proves it is not just a
+    # SQL file sitting unused.
+    for table, min_rows in (("fouling_forecast_bq", 21), ("fouling_anomalies_bq", 1)):
+        try:
+            r = _bq(DST_PROJECT, f"""
+                SELECT COUNT(*) n, COUNT(DISTINCT unit_id) units
+                FROM `{DST_PROJECT}.ro_forecasts.{table}`""")[0]
+            check(f"{DST_PROJECT} ro_forecasts.{table} (in-SQL AI)",
+                  int(r["n"]) >= min_rows,
+                  f"{int(r['n']):,} rows / {r['units']} units")
+        except Exception:
+            warn(f"{DST_PROJECT} ro_forecasts.{table} not built",
+                 "run Dataform with --tags bqml")
+
     # Deployed Cloud Run services — are they serving anything real?
     for project in (DST_PROJECT, SRC_PROJECT):
         try:
