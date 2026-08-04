@@ -1,9 +1,10 @@
+import os
 import requests
 from datetime import datetime
 from google.cloud import bigquery
 import argparse
 
-PROJECT_ID = "spatial-cat-489006-a4"
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "spatial-cat-489006-a4")
 DATASET_ID = "ro_raw"
 LATITUDE = 33.69
 LONGITUDE = -117.95
