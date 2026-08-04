@@ -17,7 +17,7 @@ twin of that contract; every output carries evidence (slope, R², band, which re
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-from common import load_readings, add_deviation, cycle_days, DATA
+from common import load_readings, load_deviation_bus, cycle_days, DATA
 
 # consume the 003 confound-free deviation, NOT the raw reading (004 FR-007 / SC-005)
 SIGNAL = "unit_n_delta_p_deviation"
@@ -108,7 +108,7 @@ def anomalies(cyc: pd.DataFrame) -> list[dict]:
 
 
 def main():
-    df = add_deviation(load_readings())   # 003 deviation bus
+    df = load_deviation_bus(load_readings())   # join 003's deviations.csv
     fc_rows, anom_total = [], 0
     for (unit, cycle), cyc in df.groupby(["unit_id", "cycle_id"]):
         f = forecast_unit(cyc)

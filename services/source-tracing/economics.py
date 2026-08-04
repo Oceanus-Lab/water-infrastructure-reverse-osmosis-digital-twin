@@ -15,7 +15,7 @@ All six parameters below are editable.
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-from common import load_readings, add_deviation, cycle_days, DATA
+from common import load_readings, load_deviation_bus, cycle_days, DATA
 
 SIGNAL = "unit_n_delta_p_deviation"   # consume the 003 deviation bus, not raw ΔP
 
@@ -97,7 +97,7 @@ def unit_economics(cyc: pd.DataFrame, p: dict) -> dict | None:
 
 
 def main():
-    df = add_deviation(load_readings())   # 003 deviation bus
+    df = load_deviation_bus(load_readings())   # join 003's deviations.csv
     p = PARAMS
     rows = [r for (_, _), cyc in df.groupby(["unit_id", "cycle_id"])
             if (r := unit_economics(cyc, p))]

@@ -1,35 +1,186 @@
 {
   "pre_registered_params": {
     "horizon_days": 90,
-    "min_sustained_warning_days": 3
+    "min_sustained_warning_days": 3,
+    "warn_sigma": 4.0,
+    "warn_rise_raw": {
+      "unit_n_delta_p": 1.8215,
+      "salt_passage": 0.1641
+    }
   },
   "total_cip_events": 71,
   "detected_cycles": 92,
-  "baseline_error": 0.504,
+  "baseline_error": 0.521,
   "leading_indicator": {
     "signal": "salt_passage",
-    "precision": 0.5,
-    "recall": 0.211,
-    "tps": 15,
-    "fps": 15,
-    "fns": 56,
-    "median_lead_days": 39.0,
-    "p25_lead_days": 7.5,
-    "p75_lead_days": 56.0,
-    "score": 0.3556338028169014
+    "precision": 0.474,
+    "recall": 0.38,
+    "tps": 27,
+    "fps": 30,
+    "fns": 44,
+    "median_lead_days": 53.0,
+    "p25_lead_days": 23.0,
+    "p75_lead_days": 71.5,
+    "score": 0.4269829503335804,
+    "warn_sigma": 4.0,
+    "warn_rise_raw": 0.1641
   },
   "alternative_indicators": [
     {
       "signal": "unit_n_delta_p",
+      "precision": 0.4,
+      "recall": 0.197,
+      "tps": 14,
+      "fps": 21,
+      "fns": 57,
+      "median_lead_days": 29.0,
+      "p25_lead_days": 2.5,
+      "p75_lead_days": 51.5,
+      "score": 0.29859154929577464,
+      "warn_sigma": 4.0,
+      "warn_rise_raw": 1.8215
+    }
+  ],
+  "sensitivity": [
+    {
+      "warn_sigma": 4.0,
+      "signal": "unit_n_delta_p",
+      "warn_rise_raw": 1.8215,
+      "precision": 0.4,
+      "recall": 0.197,
+      "tps": 14,
+      "median_lead_days": 29.0,
+      "score": 0.299
+    },
+    {
+      "warn_sigma": 4.0,
+      "signal": "salt_passage",
+      "warn_rise_raw": 0.1641,
+      "precision": 0.474,
+      "recall": 0.38,
+      "tps": 27,
+      "median_lead_days": 53.0,
+      "score": 0.427
+    },
+    {
+      "warn_sigma": 5.0,
+      "signal": "unit_n_delta_p",
+      "warn_rise_raw": 2.2769,
+      "precision": 0.444,
+      "recall": 0.169,
+      "tps": 12,
+      "median_lead_days": 26.0,
+      "score": 0.307
+    },
+    {
+      "warn_sigma": 5.0,
+      "signal": "salt_passage",
+      "warn_rise_raw": 0.2052,
+      "precision": 0.453,
+      "recall": 0.338,
+      "tps": 24,
+      "median_lead_days": 22.5,
+      "score": 0.395
+    },
+    {
+      "warn_sigma": 6.0,
+      "signal": "unit_n_delta_p",
+      "warn_rise_raw": 2.7322,
+      "precision": 0.478,
+      "recall": 0.155,
+      "tps": 11,
+      "median_lead_days": 7.0,
+      "score": 0.317
+    },
+    {
+      "warn_sigma": 6.0,
+      "signal": "salt_passage",
+      "warn_rise_raw": 0.2462,
+      "precision": 0.478,
+      "recall": 0.31,
+      "tps": 22,
+      "median_lead_days": 29.0,
+      "score": 0.394
+    },
+    {
+      "warn_sigma": 6.6,
+      "signal": "unit_n_delta_p",
+      "warn_rise_raw": 3.0054,
       "precision": 0.476,
       "recall": 0.141,
       "tps": 10,
-      "fps": 11,
-      "fns": 61,
       "median_lead_days": 5.5,
-      "p25_lead_days": 2.5,
-      "p75_lead_days": 16.25,
-      "score": 0.3085177733065057
+      "score": 0.309
+    },
+    {
+      "warn_sigma": 6.6,
+      "signal": "salt_passage",
+      "warn_rise_raw": 0.2708,
+      "precision": 0.467,
+      "recall": 0.296,
+      "tps": 21,
+      "median_lead_days": 22.0,
+      "score": 0.381
+    },
+    {
+      "warn_sigma": 8.0,
+      "signal": "unit_n_delta_p",
+      "warn_rise_raw": 3.643,
+      "precision": 0.588,
+      "recall": 0.141,
+      "tps": 10,
+      "median_lead_days": 22.0,
+      "score": 0.365
+    },
+    {
+      "warn_sigma": 8.0,
+      "signal": "salt_passage",
+      "warn_rise_raw": 0.3283,
+      "precision": 0.525,
+      "recall": 0.296,
+      "tps": 21,
+      "median_lead_days": 21.0,
+      "score": 0.41
+    },
+    {
+      "warn_sigma": 10.0,
+      "signal": "unit_n_delta_p",
+      "warn_rise_raw": 4.5537,
+      "precision": 0.538,
+      "recall": 0.099,
+      "tps": 7,
+      "median_lead_days": 17.0,
+      "score": 0.319
+    },
+    {
+      "warn_sigma": 10.0,
+      "signal": "salt_passage",
+      "warn_rise_raw": 0.4103,
+      "precision": 0.486,
+      "recall": 0.239,
+      "tps": 17,
+      "median_lead_days": 16.0,
+      "score": 0.363
+    },
+    {
+      "warn_sigma": 12.2,
+      "signal": "unit_n_delta_p",
+      "warn_rise_raw": 5.5555,
+      "precision": 0.636,
+      "recall": 0.099,
+      "tps": 7,
+      "median_lead_days": 7.0,
+      "score": 0.367
+    },
+    {
+      "warn_sigma": 12.2,
+      "signal": "salt_passage",
+      "warn_rise_raw": 0.5006,
+      "precision": 0.5,
+      "recall": 0.211,
+      "tps": 15,
+      "median_lead_days": 39.0,
+      "score": 0.356
     }
   ],
   "mechanism_mix": {

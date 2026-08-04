@@ -1,9 +1,9 @@
 {
   "leading_indicator": "salt_passage",
   "metrics": {
-    "precision": 0.5,
-    "recall": 0.211,
-    "median_lead_days": 39.0
+    "precision": 0.474,
+    "recall": 0.38,
+    "median_lead_days": 53.0
   },
   "max_regression": {
     "precision": 0.05,
@@ -11,5 +11,12 @@
     "median_lead_days": 5.0
   },
   "source": "71 real CIP events, OCWD 2019-01-01..2021-01-13 (see data/validation_report.json)",
-  "policy": "Update deliberately ONLY when a model change intentionally moves the baseline. Never edit to hide a regression."
+  "policy": "Update deliberately ONLY when a model change intentionally moves the baseline. Never edit to hide a regression.",
+  "history": [
+    {
+      "date": "2026-08-04",
+      "metrics": { "precision": 0.5, "recall": 0.211, "median_lead_days": 39.0 },
+      "reason": "Superseded. Warning thresholds were hand-picked per signal in raw units — 3.0 psi for unit_n_delta_p, 0.5 % for salt_passage — which on this dataset is 6.6 sigma versus 12.2 sigma of each signal's own clean-window spread. Ranking the two by (precision+recall)/2 while holding one to a nearly twice stricter bar measured which threshold was kinder, not which signal leads. Thresholds are now WARN_SIGMA robust sigmas of each signal's own spread. WARN_SIGMA = 4.0 matches deviation.py's existing OUT_OF_RANGE_Z rather than being tuned against this backtest, and validation_report.json now publishes the full 4-12 sigma sweep. salt_passage ranks first at every sigma except 12.2, so the leading-indicator finding does not depend on the choice. Effect on the leading indicator: recall 0.211 -> 0.380, median lead 39 -> 53 days, true positives 15 -> 27, precision 0.500 -> 0.474."
+    }
+  ]
 }

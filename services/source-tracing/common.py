@@ -45,11 +45,52 @@ def clean_anchor(cyc: pd.DataFrame, col: str) -> float | None:
 
 
 def add_deviation(df: pd.DataFrame, col: str = "unit_n_delta_p") -> pd.DataFrame:
-    """Attach the 003 deviation (value − clean anchor) per (unit, cycle). Downstream features
-    (004 forecast, 006 economics) consume `<col>_deviation`, never the raw reading."""
+    """Compute the 003 deviation (value − clean anchor) per (unit, cycle) in-process.
+
+    Use this when the anchor must be derived from exactly the rows you were given — the
+    serving API's as-of-date path, where anything else would leak the future: early in a
+    cycle the full-cycle 10-day anchor is itself made of readings that have not happened yet.
+
+    For the batch pipeline use `load_deviation_bus` instead, so 003 stays the single producer.
+    """
     df = df.copy()
     anchors = {(u, c): clean_anchor(cyc, col) for (u, c), cyc in df.groupby(["unit_id", "cycle_id"])}
     keys = list(zip(df["unit_id"], df["cycle_id"]))
     df[f"{col}_anchor"] = [anchors.get(k) for k in keys]
     df[f"{col}_deviation"] = df[col] - df[f"{col}_anchor"]
     return df
+
+
+DEVIATIONS_CSV = DATA / "deviations.csv"
+
+
+def load_deviation_bus(df: pd.DataFrame, col: str = "unit_n_delta_p") -> pd.DataFrame:
+    """Attach the 003 deviation by JOINING `deviations.csv` — 003 is the single producer.
+
+    004 and 006 used to recompute the same quantity through `add_deviation`. The numbers
+    agreed, but 003 stayed a dead-end output: when `deviation.py` upgrades a cycle's baseline
+    from the analytical clean anchor to the WaterTAP `fidelity="high"` physics baseline,
+    recomputing downstream would silently ignore it. Joining makes that upgrade propagate,
+    and carries the per-row fidelity/provenance with it.
+
+    `deviations.csv` stores `deviation` already oriented so positive == worse health. For
+    `unit_n_delta_p` (worse == "up") that is the raw rise, which is what 004/006 want.
+
+    Falls back to computing in-process when the file is absent (first run) or does not cover
+    these rows, so the modules still work standalone.
+    """
+    if not DEVIATIONS_CSV.exists():
+        return add_deviation(df, col)
+
+    dev = pd.read_csv(DEVIATIONS_CSV, parse_dates=["reading_date"])
+    dev = dev[dev["metric"] == col][
+        ["unit_id", "cycle_id", "reading_date", "expected_clean", "deviation", "fidelity"]
+    ]
+    out = df.merge(dev, on=["unit_id", "cycle_id", "reading_date"], how="left")
+    if out["deviation"].notna().sum() == 0:      # stale or mismatched file — don't serve nulls
+        return add_deviation(df, col)
+
+    out[f"{col}_anchor"] = out.pop("expected_clean")
+    out[f"{col}_deviation"] = out.pop("deviation")
+    out[f"{col}_fidelity"] = out.pop("fidelity")
+    return out

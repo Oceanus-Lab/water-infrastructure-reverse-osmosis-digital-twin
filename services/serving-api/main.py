@@ -157,22 +157,50 @@ def _asof_cached(key: tuple, compute):
     return value
 
 
+_UNIT_INDEX: dict[tuple, dict[str, pd.DataFrame]] = {}
+
+
+def _readings_by_unit() -> dict[str, pd.DataFrame]:
+    """readings.csv split per unit, sorted, with reading_date parsed exactly once.
+
+    Both matter for the as-of path. Filtering `reading_date <= date` on the raw CSV meant a
+    string comparison over all 15,624 rows for each of the 21 units on every uncached date,
+    and cycle_days re-ran pd.to_datetime (with format inference) on every call. Together they
+    were the bulk of the ~120 ms an unseen date cost.
+    """
+    key = _data_version()
+    hit = _UNIT_INDEX.get(key)
+    if hit is not None:
+        return hit
+    r = _csv("readings.csv")
+    if r.empty:
+        return {}
+    r = r.copy()
+    r["reading_date"] = pd.to_datetime(r["reading_date"])
+    index = {uid: g.sort_values("reading_date") for uid, g in r.groupby("unit_id", sort=False)}
+    _UNIT_INDEX.clear()          # only ever one generation of readings.csv is live
+    _UNIT_INDEX[key] = index
+    return index
+
+
 def _cycle_as_of(unit_id: str, date: str):
     """Rows of unit_id's then-active cycle up to `date`, with the 003 deviation attached.
 
     The clean anchor is derived from the truncated frame on purpose: early in a cycle there
     may not be 3 clean readings yet, and the honest answer then is "not enough evidence",
-    which is what the 003/004 helpers already return.
+    which is what the 003/004 helpers already return. This is why the as-of path computes the
+    deviation rather than joining 003's deviations.csv the way the batch pipeline does — that
+    file's anchor is built from the whole cycle, which would leak the future here.
     """
     from common import add_deviation
 
-    r = _csv("readings.csv")
-    if r.empty:
+    g = _readings_by_unit().get(unit_id)
+    if g is None:
         return None
-    u = r[(r["unit_id"] == unit_id) & (r["reading_date"] <= date)]
+    u = g[g["reading_date"] <= pd.Timestamp(date)]
     if u.empty:
         return None
-    cyc_id = u.sort_values("reading_date")["cycle_id"].iloc[-1]
+    cyc_id = u["cycle_id"].iloc[-1]          # already sorted by date
     return add_deviation(u[u["cycle_id"] == cyc_id].copy())
 
 
