@@ -1,0 +1,55 @@
+config {
+  type: "table",
+  schema: "ro_forecasts",
+  name: "fouling_anomalies_bq",
+  tags: ["forecasts", "bqml", "daily"],
+  description: "Readings AI.DETECT_ANOMALIES flags against the TimesFM expectation, per unit. The in-SQL half of spec 004's anomaly detection.",
+  assertions: {
+    uniqueKey: ["unit_id", "reading_date"],
+    nonNull: ["unit_id", "reading_date", "anomaly_probability"]
+  }
+}
+
+/*
+ * Companion to fouling_forecast_bq. Same reasoning: services/source-tracing/forecast_bq.sql
+ * carried this query, described it as the production path, and nothing ever ran it.
+ *
+ * Worth stating what differs from the Python detector, because they disagree by design and a
+ * reader comparing counts should know why. forecast_anomaly.anomalies() flags points by a
+ * rolling-median MAD z-score on the deviation signal — local, cheap, and computable as-of any
+ * date. This flags points TimesFM did not expect given the whole series. The first answers
+ * "was this reading odd compared to its neighbours", the second "was it odd compared to what
+ * the model predicted". Both are kept; neither is a replacement for the other.
+ *
+ * last_n_points is required by the function and bounds the analysis to the recent window,
+ * so this reports on the tail of the series rather than relitigating two years of history.
+ */
+
+SELECT
+  unit_id,
+  DATE(time_series_timestamp)                     AS reading_date,
+  ROUND(time_series_data, 3)                      AS ndp_actual,
+  is_anomaly,
+  ROUND(anomaly_probability, 4)                   AS anomaly_probability,
+  ROUND(lower_bound, 3)                           AS expected_lower,
+  ROUND(upper_bound, 3)                           AS expected_upper,
+  -- Signed distance from the middle of the expected band: positive == higher ΔP == worse,
+  -- matching the orientation deviation.py uses so the two reconcile for a reader.
+  ROUND(time_series_data - ((lower_bound + upper_bound) / 2), 3) AS deviation_from_expected,
+  'AI.DETECT_ANOMALIES (TimesFM)'                 AS method,
+  'unit_n_delta_p'                                AS signal,
+  CURRENT_TIMESTAMP()                             AS generated_at
+FROM
+  AI.DETECT_ANOMALIES(
+    (
+      SELECT unit_id, TIMESTAMP(reading_date) AS ts, unit_n_delta_p AS y
+      FROM ${ref("unit_readings")}
+      WHERE unit_n_delta_p IS NOT NULL
+    ),
+    data_col               => 'y',
+    timestamp_col          => 'ts',
+    id_cols                => ['unit_id'],
+    anomaly_prob_threshold => 0.9,
+    last_n_points          => 90
+  )
+WHERE is_anomaly = TRUE

@@ -557,8 +557,71 @@ def override_economics(unit_id: str, params: dict, date: str = Query(...)):
     return {"current": current, "history": history}
 
 
+# ── BigQuery-native forecast (spec 004, architecture-principle path) ───────────────────────
+# CLAUDE.md: "BigQuery is both storage AND the primary AI compute layer". The TimesFM
+# forecast and anomaly tables are produced by Dataform (pipeline/dataform/definitions/
+# forecasts/*_bq.sqlx) and read here, so the in-SQL path has an actual consumer rather than
+# being a SQL file nobody calls. /api/forecast keeps serving the as-of-date Python fit, which
+# answers a different question — see the note in fouling_forecast_bq.sqlx.
+
+_BQ_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+_BQ_FORECAST_DATASET = os.environ.get("BQ_FORECAST_DATASET", "ro_forecasts")
+_bq_cache: dict[str, object] = {}
+
+
+def _bq_query(sql: str):
+    """Run a query against BigQuery, or return None if BigQuery is not reachable.
+
+    Absent credentials or SDK is a normal state for local dev (the CSV path covers it), so
+    this degrades to None rather than 500-ing the whole endpoint.
+    """
+    if not _BQ_PROJECT:
+        return None
+    try:
+        client = _bq_cache.get("client")
+        if client is None:
+            from google.cloud import bigquery
+
+            client = _bq_cache["client"] = bigquery.Client(project=_BQ_PROJECT)
+        return [dict(r) for r in client.query(sql).result()]
+    except Exception:
+        return None
+
+
+@app.get("/api/bq-forecast/{unit_id}")
+def bq_forecast(unit_id: str):
+    """TimesFM projection and anomalies for a unit, straight from BigQuery."""
+    if unit_id not in _unit_ids():
+        raise HTTPException(status_code=404, detail=f"unknown unit {unit_id}")
+
+    fc = _bq_query(f"""
+        SELECT CAST(forecast_date AS STRING) AS forecast_date, ndp_forecast,
+               ndp_lower_90, ndp_upper_90, method, provenance
+        FROM `{_BQ_PROJECT}.{_BQ_FORECAST_DATASET}.fouling_forecast_bq`
+        WHERE unit_id = @u ORDER BY forecast_date
+    """.replace("@u", f"'{unit_id}'"))
+    if fc is None:
+        raise HTTPException(status_code=503,
+                            detail="BigQuery unavailable — run the Dataform 'bqml' tag first")
+
+    anomalies = _bq_query(f"""
+        SELECT CAST(reading_date AS STRING) AS reading_date, ndp_actual,
+               anomaly_probability, deviation_from_expected
+        FROM `{_BQ_PROJECT}.{_BQ_FORECAST_DATASET}.fouling_anomalies_bq`
+        WHERE unit_id = @u ORDER BY reading_date DESC LIMIT 20
+    """.replace("@u", f"'{unit_id}'")) or []
+
+    return {
+        "unitId": unit_id,
+        "method": "AI.FORECAST (TimesFM)",
+        "computedIn": "bigquery",
+        "horizon": fc,
+        "anomalies": anomalies,
+    }
+
+
 @app.get("/")
 def root():
     return {"service": "ro-serving-api", "endpoints": ["/api/fleet", "/api/inspection/{id}",
-                                                        "/api/alerts", "/api/timeline", "/api/physics-deviation/{unit_id}", "/api/forecast/{unit_id}", "/api/anomaly/{unit_id}", "/api/validation", "/api/economics/{unit_id}"]}
+                                                        "/api/alerts", "/api/timeline", "/api/physics-deviation/{unit_id}", "/api/forecast/{unit_id}", "/api/anomaly/{unit_id}", "/api/validation", "/api/economics/{unit_id}", "/api/bq-forecast/{unit_id}"]}
 
