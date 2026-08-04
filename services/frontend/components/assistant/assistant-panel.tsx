@@ -6,6 +6,7 @@ import { X, Send, Bot, User, Waves, TrendingDown, Gauge } from "lucide-react";
 import { AssistantProposalCard } from "./assistant-proposal-card";
 import { SourceTraceBadge } from "./source-trace-badge";
 import { EvidenceCard } from "./evidence-card";
+import { AssistantMarkdown } from '@/components/assistant/assistant-markdown';
 
 const SUGGESTED_PROMPTS = [
   { icon: Waves, label: "Which unit is fouling fastest?" },
@@ -122,7 +123,10 @@ export function AssistantPanel() {
                       : 'bg-background border-border text-foreground rounded-tl-[8px]'}
                 `}
               >
-                <p className="whitespace-pre-wrap font-sans">{msg.content}</p>
+                {/* The model answers in markdown; the operator's own message is literal text. */}
+                {msg.role === 'user'
+                  ? <p className="whitespace-pre-wrap font-sans">{msg.content}</p>
+                  : <AssistantMarkdown>{msg.content}</AssistantMarkdown>}
                 
                 {msg.sourcedFigures && msg.sourcedFigures.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-border space-y-3">

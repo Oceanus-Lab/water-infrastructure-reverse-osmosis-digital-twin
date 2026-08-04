@@ -4,6 +4,17 @@ config {
   tags: ["staging", "daily"]
 }
 
+-- Electricity tariff for the plant, one row per (date, region).
+--
+-- The raw table carries one row per sector (commercial / industrial / residential /
+-- all_sectors) since load_eia_bulk.py ingests them all. An RO plant of this size is billed
+-- commercially, so that is the series economics.py consumes — and filtering here keeps the
+-- month unique, which environmental_context's LAST_VALUE fill depends on. Without the filter
+-- every month appeared four times and the "current" tariff was whichever sector happened to
+-- sort last.
+--
+-- The older API loader (fetch_eia.py) writes no `sector` column at all, so the filter is
+-- written to pass those rows through rather than silently dropping them.
 SELECT
   date,
   state_id,
@@ -12,3 +23,5 @@ SELECT
   price_cents_per_kwh / 100.0 AS electricity_cost_usd_per_kwh
 FROM
   `${dataform.projectConfig.defaultDatabase}`.ro_raw.eia_prices_raw
+WHERE
+  IFNULL(sector, 'commercial') = 'commercial'
