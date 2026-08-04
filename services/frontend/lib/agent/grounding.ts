@@ -7,8 +7,33 @@
  */
 import type { SpecialistId } from './prompts';
 
+// SERVING_API_URL first: this module runs server-side, and NEXT_PUBLIC_API_URL is inlined at
+// build time, so an image built with it still reads `undefined` at runtime unless the same
+// value is also present in the environment. Deploy sets SERVING_API_URL as a runtime var.
 const API_BASE =
   process.env.SERVING_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+/** How many units a fleet-scope question pulls per-unit detail for. */
+const FLEET_FANOUT = 5;
+
+/**
+ * The least healthy units right now, lowest score first.
+ *
+ * /api/fleet is one request and already ranks the fleet, so this costs one call instead of
+ * 21 — which is what made the fleet path exceed Cloud Run's request timeout. Units with no
+ * score yet (not enough evidence in-cycle) sort last rather than first.
+ */
+async function worstUnits(
+  q: (path: string) => Promise<unknown>,
+  limit: number,
+): Promise<string[]> {
+  const fleet = (await q('/api/fleet')) as { id: string; score: number | null }[] | null;
+  if (!Array.isArray(fleet)) return [];
+  return [...fleet]
+    .sort((a, b) => (a.score ?? Infinity) - (b.score ?? Infinity))
+    .slice(0, limit)
+    .map((u) => u.id);
+}
 
 // Default "now" = the last replay date in the dataset. The frontend may pass its replay-clock date.
 export const DEFAULT_DATE = '2021-01-13';
@@ -81,19 +106,35 @@ export async function fetchGrounding(
     }
   }
 
+  // Fleet-scope questions ("which unit is fouling fastest?") name no unit, so `units` is
+  // empty and these two specialists used to fetch nothing — the assistant then answered the
+  // flagship question with "the data does not include a rate of change", which is honest but
+  // useless when /api/forecast carries foulingRatePerDay for every unit.
+  //
+  // Fanning out to all 21 is not the answer either: each forecast is computed as-of the date,
+  // and 21 of them blew past Cloud Run's request timeout. Take the least healthy units — for
+  // "fouling fastest" / "clean now or wait", those are the ones the question is about.
+  const simUnits = units.length > 0 ? units : await worstUnits(q, FLEET_FANOUT);
+
   if (specialists.includes('simulation')) {
     data.simulation = {
-      units: await Promise.all(
-        units.map(async (u) => ({ unitId: u, forecast: await q(`/api/forecast/${u}`) })),
-      ),
+      scope,
+      units: (
+        await Promise.all(
+          simUnits.map(async (u) => ({ unitId: u, forecast: await q(`/api/forecast/${u}`) })),
+        )
+      ).filter((r) => r.forecast !== null),
     };
   }
 
   if (specialists.includes('economics')) {
     data.economics = {
-      units: await Promise.all(
-        units.map(async (u) => ({ unitId: u, economics: await q(`/api/economics/${u}`) })),
-      ),
+      scope,
+      units: (
+        await Promise.all(
+          simUnits.map(async (u) => ({ unitId: u, economics: await q(`/api/economics/${u}`) })),
+        )
+      ).filter((r) => r.economics !== null),
     };
   }
 
