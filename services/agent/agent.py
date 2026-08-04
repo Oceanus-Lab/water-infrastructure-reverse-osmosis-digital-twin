@@ -217,19 +217,19 @@ def _get_coordinator_system() -> str:
     try:
         from google.cloud import bigquery
         bq = bigquery.Client(project=_PROJECT)
-        query = f\"\"\"
+        query = f"""
             SELECT fact_type, key, value, unit_id, written_at
             FROM `{_PROJECT}.{_BQ_SERVING}.agent_memory`
             ORDER BY written_at DESC
             LIMIT 50
-        \"\"\"
+        """
         rows = bq.query(query).result()
         facts = []
         for row in rows:
             facts.append(f"- [{row.unit_id or 'GLOBAL'}] {row.fact_type}:{row.key} = {row.value}")
         
         if facts:
-            memory_block = "\\n\\n═══ CURRENT MEMORY BANK FACTS ═══\\n" + "\\n".join(facts)
+            memory_block = "\n\n═══ CURRENT MEMORY BANK FACTS ═══\n" + "\n".join(facts)
             base_sys += memory_block
     except Exception as e:
         print(f"Warning: Failed to load Memory Bank facts: {e}")

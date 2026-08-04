@@ -21,7 +21,9 @@ jobs:
         run: pip install -r services/source-tracing/requirements-dev.txt
 
       - name: Lint (ruff — real errors only)
-        run: ruff check services/source-tracing pipeline services/replay
+        # services/agent is included deliberately: it was outside this list, and agent.py sat
+        # on main with a SyntaxError (escaped triple quotes) that nothing ever ran into.
+        run: ruff check services pipeline
 
       - name: Tests (pytest)
         run: pytest -q services/source-tracing/tests pipeline/tests services/replay/tests
