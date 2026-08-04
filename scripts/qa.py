@@ -298,24 +298,47 @@ def qa_gcp():
              "run Dataform with defaultProject=" + DST_PROJECT)
 
     # Deployed Cloud Run services — are they serving anything real?
-    try:
-        p = subprocess.run(["gcloud", "run", "services", "list", f"--project={SRC_PROJECT}",
-                            "--region=us-central1", "--format=value(metadata.name,status.url)"],
-                           capture_output=True, text=True, timeout=90)
-        services = dict(line.split("\t")[:2] for line in p.stdout.strip().splitlines() if "\t" in line)
-        ok("Cloud Run services", ", ".join(services) or "none")
-        url = services.get("ro-serving-api")
-        if url:
-            with urllib.request.urlopen(f"{url}/api/fleet?date={DATE}", timeout=30) as r:
+    for project in (DST_PROJECT, SRC_PROJECT):
+        try:
+            p = subprocess.run(["gcloud", "run", "services", "list", f"--project={project}",
+                                "--region=us-central1", "--format=value(metadata.name,status.url)"],
+                               capture_output=True, text=True, timeout=90)
+            services = dict(line.split("\t")[:2] for line in p.stdout.strip().splitlines() if "\t" in line)
+            if not services:
+                warn(f"{project} Cloud Run", "no services")
+                continue
+            ok(f"{project} Cloud Run", ", ".join(services))
+
+            url = services.get("ro-serving-api")
+            if not url:
+                continue
+            with urllib.request.urlopen(f"{url}/api/fleet?date={DATE}", timeout=60) as r:
                 fleet = json.load(r)
             scored = sum(u.get("score") is not None for u in fleet)
             if scored == 0:
-                warn("deployed ro-serving-api returns no scores",
-                     f"0/{len(fleet)} units scored — image predates the data fix, needs redeploy")
+                warn(f"{project} ro-serving-api returns no scores",
+                     f"0/{len(fleet)} units — data/ or _lib/ missing from the image, see deploy.sh")
             else:
-                ok("deployed ro-serving-api", f"{scored}/{len(fleet)} units scored")
-    except Exception as exc:
-        warn("Cloud Run probe", str(exc))
+                ok(f"{project} ro-serving-api", f"{scored}/{len(fleet)} units scored")
+
+            # A deployed service can still be leaking the future; check it the same way.
+            # Only our own project is a hard check — SRC_PROJECT is a collaborator's
+            # deployment we do not control, so its state is reported, not enforced.
+            seen = set()
+            for d in ("2020-04-01", "2020-07-01"):
+                with urllib.request.urlopen(f"{url}/api/forecast/{UNIT}?date={d}", timeout=60) as r:
+                    f = json.load(r)
+                seen.add((f or {}).get("currentRise"))
+            label = f"{project} deployed API has no look-ahead"
+            detail = f"{len(seen)} distinct answers across 2 dates"
+            if project == DST_PROJECT:
+                check(label, len(seen) > 1, detail)
+            elif len(seen) > 1:
+                ok(label, detail)
+            else:
+                warn(label, detail + " — image predates the as-of fix, not redeployed by us")
+        except Exception as exc:
+            warn(f"{project} Cloud Run probe", str(exc))
 
 
 def main() -> int:
