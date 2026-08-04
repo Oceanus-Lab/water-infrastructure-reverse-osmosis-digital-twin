@@ -22,10 +22,24 @@ def load_readings() -> pd.DataFrame:
 CLEAN_DAYS = 10   # first N days of a cleaning cycle define the freshly-cleaned anchor (matches deviation.py)
 
 
+def cycle_days(cyc: pd.DataFrame) -> pd.Series:
+    """Days elapsed since the start of this cleaning cycle, measured from reading_date.
+
+    Use this as the time axis, never `days_since_replacement`. That column counts from the
+    last membrane REPLACEMENT, not the last CIP, so it resets to 0 partway through a cycle
+    whenever a membrane is swapped. Two of the 92 OCWD cycles (C01#4, D01#4) do exactly that:
+    both actually run ~130 days, but sorting them by days_since_replacement reorders their
+    readings and stretches the span to ~1750 — which corrupted the fouling slope, the
+    clean-anchor window, and the "latest reading" every downstream module picked.
+    """
+    d = pd.to_datetime(cyc["reading_date"])
+    return (d - d.min()).dt.days.astype(float)
+
+
 def clean_anchor(cyc: pd.DataFrame, col: str) -> float | None:
     """Expected clean-membrane value for a cycle = mean over its freshly-cleaned start.
     ONE definition, shared by 003/004/005/006 so every 'rise over clean' number reconciles."""
-    early = cyc[cyc["days_since_replacement"] <= cyc["days_since_replacement"].min() + CLEAN_DAYS]
+    early = cyc[cycle_days(cyc) <= CLEAN_DAYS]
     vals = early[col].dropna()
     return float(vals.mean()) if len(vals) >= 3 else None
 

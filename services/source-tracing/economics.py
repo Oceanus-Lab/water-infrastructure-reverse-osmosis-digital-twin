@@ -15,7 +15,7 @@ All six parameters below are editable.
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-from common import load_readings, add_deviation, DATA
+from common import load_readings, add_deviation, cycle_days, DATA
 
 SIGNAL = "unit_n_delta_p_deviation"   # consume the 003 deviation bus, not raw ΔP
 
@@ -39,31 +39,46 @@ def extra_sec_kwh_m3(dp_rise_psi: float, p: dict) -> float:
 
 
 def unit_economics(cyc: pd.DataFrame, p: dict) -> dict | None:
-    cyc = cyc.sort_values("days_since_replacement")
+    # Ordered by reading_date, not days_since_replacement — see common.cycle_days. Sorting by
+    # the latter picked the wrong "latest" reading on the two cycles where a membrane swap
+    # resets it (D01#4 reported +13.19 psi when the true latest deviation was −1.35).
+    cyc = cyc.sort_values("reading_date")
     y = cyc[SIGNAL].to_numpy(float)
     if len(y) < 5 or np.isnan(y).all():
         return None
-    y = y[~np.isnan(y)]
-    anchor = y[:5].mean()
-    dp_rise_now = y[-1] - anchor
+    valid = ~np.isnan(y)
+    y = y[valid]
+    # Elapsed days, not the reading count. The two differ whenever the cycle has gaps, and
+    # every "per day" figure below (amortised CIP, cumulative penalty, break-even) was
+    # previously scaled by len(y) — understating them in proportion to the missing days.
+    d = cycle_days(cyc).to_numpy(float)[valid]
+    elapsed_days = max(float(d[-1] - d[0]) + 1.0, 1.0)
+
+    # SIGNAL is already (reading − clean anchor) from common.add_deviation, so the rise over
+    # clean IS the deviation. The old local anchor (y[:5].mean(), first 5 *rows*) quietly
+    # replaced the shared 10-day anchor, so 006's dp_rise_psi disagreed with 003's output.
+    dp_rise_now = y[-1]
     # daily energy penalty at the current fouling level
     extra_sec = extra_sec_kwh_m3(dp_rise_now, p)
     daily_penalty = extra_sec * p["permeate_flow_m3_day"] * p["electricity_price_usd_kwh"]
     # cumulative penalty accrued so far this cycle (integrate ΔP rise over the cycle)
-    rise_series = np.clip(y - anchor, 0, None)
-    cum_sec = extra_sec_kwh_m3(rise_series.mean(), p) * len(y)  # avg penalty × days
+    rise_series = np.clip(y, 0, None)
+    cum_sec = extra_sec_kwh_m3(rise_series.mean(), p) * elapsed_days  # avg penalty × days
     cum_penalty = cum_sec * p["permeate_flow_m3_day"] * p["electricity_price_usd_kwh"]
     cip_total = p["cip_cost_usd"] + p["cip_downtime_lost_usd"]
 
     # delta-first recommendation: is today's daily penalty already > amortized CIP over a cycle?
-    breakeven_daily = cip_total / max(len(y), 1)
+    breakeven_daily = cip_total / elapsed_days
     recommend = "CLEAN NOW" if daily_penalty > breakeven_daily and dp_rise_now > WARN_RISE else "WAIT"
-    
+
+    # Day at which the accumulating penalty equals one CIP, assuming the penalty ramps
+    # linearly from 0 to today's daily_penalty over elapsed_days:
+    #   cum(d) = ∫₀ᵈ (daily/D)·t dt = daily·d²/(2D)  ⇒  d = √(2·cip_total·D / daily)
+    # The factor of 2 from that integral was missing, so break-even landed ~1.41× early.
     break_even_day = None
     if daily_penalty > 0:
-        d_squared = cip_total * len(y) / daily_penalty
-        break_even_day = int(np.sqrt(d_squared))
-        
+        break_even_day = int(np.sqrt(2.0 * cip_total * elapsed_days / daily_penalty))
+
     unit_id = cyc["unit_id"].iloc[0]
     provenance = "measured" if unit_id.startswith("F") or unit_id.startswith("G") else "modeled"
     credibility = "high" if provenance == "measured" else "medium"

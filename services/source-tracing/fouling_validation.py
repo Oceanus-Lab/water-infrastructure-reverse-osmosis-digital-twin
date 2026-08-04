@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import numpy as np
 import pandas as pd
-from common import load_readings, DATA, clean_anchor
+from common import load_readings, DATA, clean_anchor, CLEAN_DAYS
 from attribute import percentile_ranks, attribute_cycle
 
 # FR-005/FR-007 Pre-registered constraints
@@ -62,6 +62,12 @@ def evaluate_signal(df: pd.DataFrame, signal: str, warn_rise: float) -> dict:
             elif lead > HORIZON_DAYS:
                 fps += 1
                 fns += 1  # Missed the actual CIP window
+            else:
+                # lead < 0: the warning fired AFTER the CIP, so it predicted nothing. This
+                # branch did not exist, so such cycles were counted as neither TP, FP nor
+                # FN — they vanished from the denominator and flattered precision.
+                fps += 1
+                fns += 1
         else:
             fps += 1
 
@@ -82,16 +88,23 @@ def evaluate_signal(df: pd.DataFrame, signal: str, warn_rise: float) -> dict:
     }
 
 def compute_baseline_error(df: pd.DataFrame) -> float:
-    """FR-008/009: Error between clean anchor and actual clean readings."""
+    """FR-008/009: how far the clean anchor misses a clean reading it has not seen.
+
+    Leave-one-out over each cycle's clean window. The previous version fitted the anchor on
+    the whole window and then scored it against that same window, so it reported the window's
+    own mean absolute deviation — a number that can only shrink as readings are added and
+    never says anything about predictive accuracy.
+    """
     errors = []
     for (u, c), cyc in df.groupby(["unit_id", "cycle_id"]):
-        anchor = clean_anchor(cyc, "unit_n_delta_p")
-        if anchor is None: continue
-        early = cyc[cyc["days_since_replacement"] <= cyc["days_since_replacement"].min() + 10]
-        actuals = early["unit_n_delta_p"].dropna()
-        if not actuals.empty:
-            err = (actuals - anchor).abs().mean()
-            errors.append(err)
+        early = cyc[cyc["days_since_replacement"] <= cyc["days_since_replacement"].min() + CLEAN_DAYS]
+        vals = early["unit_n_delta_p"].dropna().to_numpy(float)
+        if len(vals) < 4:            # need >=3 to form an anchor, +1 to hold out
+            continue
+        total = vals.sum()
+        for i, held_out in enumerate(vals):
+            anchor_without_i = (total - held_out) / (len(vals) - 1)
+            errors.append(abs(held_out - anchor_without_i))
     return float(np.mean(errors)) if errors else 0.0
 
 def attributions(df: pd.DataFrame) -> pd.DataFrame:

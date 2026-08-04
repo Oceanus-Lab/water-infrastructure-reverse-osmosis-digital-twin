@@ -5,7 +5,7 @@
   },
   "total_cip_events": 71,
   "detected_cycles": 92,
-  "baseline_error": 0.463,
+  "baseline_error": 0.504,
   "leading_indicator": {
     "signal": "salt_passage",
     "precision": 0.5,
@@ -21,15 +21,15 @@
   "alternative_indicators": [
     {
       "signal": "unit_n_delta_p",
-      "precision": 0.435,
+      "precision": 0.476,
       "recall": 0.141,
       "tps": 10,
-      "fps": 13,
+      "fps": 11,
       "fns": 61,
       "median_lead_days": 5.5,
       "p25_lead_days": 2.5,
       "p75_lead_days": 16.25,
-      "score": 0.2878138395590937
+      "score": 0.3085177733065057
     }
   ],
   "mechanism_mix": {

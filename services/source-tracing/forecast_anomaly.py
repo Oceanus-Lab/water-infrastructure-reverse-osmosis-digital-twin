@@ -17,7 +17,7 @@ twin of that contract; every output carries evidence (slope, R², band, which re
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-from common import load_readings, add_deviation, DATA
+from common import load_readings, add_deviation, cycle_days, DATA
 
 # consume the 003 confound-free deviation, NOT the raw reading (004 FR-007 / SC-005)
 SIGNAL = "unit_n_delta_p_deviation"
@@ -37,9 +37,11 @@ def robust_trend(days: np.ndarray, y: np.ndarray):
 
 
 def forecast_unit(cyc: pd.DataFrame) -> dict | None:
-    cyc = cyc.sort_values("days_since_replacement")
-    d0 = cyc["days_since_replacement"].min()
-    days = (cyc["days_since_replacement"] - d0).to_numpy(float)
+    # Time axis comes from reading_date, not days_since_replacement — see common.cycle_days.
+    # The latter resets mid-cycle on a membrane swap, which reordered two cycles' readings and
+    # stretched their regression x-axis from ~130 days to ~1750, flattening the fouling slope.
+    cyc = cyc.sort_values("reading_date")
+    days = cycle_days(cyc).to_numpy(float)
     y = cyc[SIGNAL].to_numpy(float)
     mask = ~np.isnan(y)                 # drop NaN readings — else slope/R²/days_to_clean = NaN
     days, y = days[mask], y[mask]
@@ -47,8 +49,11 @@ def forecast_unit(cyc: pd.DataFrame) -> dict | None:
     if tr is None:
         return None
     slope, intercept, r2, sd = tr
-    anchor = y[:5].mean()
-    target = anchor + ACTION_RISE
+    # SIGNAL is already (reading − clean anchor) from common.add_deviation, so the rise over
+    # clean IS the deviation. Re-deriving a local anchor here (previously y[:5].mean(), the
+    # first 5 *rows*) silently overrode the shared 10-day anchor, so 004's current_rise did
+    # not reconcile with 003's deviations.csv — the one thing common.clean_anchor promises.
+    target = ACTION_RISE
     now_day, now_val = days[-1], y[-1]
     # projected days from now until ΔP reaches the action threshold
     if slope > 1e-6:
@@ -62,7 +67,7 @@ def forecast_unit(cyc: pd.DataFrame) -> dict | None:
         ci_lower, ci_upper = np.nan, np.nan
     
     # Fouling-Onset Indicator (T008b)
-    fouling_onset_score = max(0.0, min(100.0, ((now_val - anchor) / ACTION_RISE) * 100))
+    fouling_onset_score = max(0.0, min(100.0, (now_val / ACTION_RISE) * 100))
     feature_attribution = ["unit_n_delta_p_deviation trend"]
 
     # Incomplete evidence states (T011b)
@@ -71,7 +76,7 @@ def forecast_unit(cyc: pd.DataFrame) -> dict | None:
     return dict(unit_id=cyc["unit_id"].iloc[0], bank_id=cyc["bank_id"].iloc[0],
                 cycle_id=int(cyc["cycle_id"].iloc[0]),
                 fouling_rate_per_day=round(float(slope), 4), trend_r2=round(float(r2), 3),
-                current_rise=round(float(now_val - anchor), 2),
+                current_rise=round(float(now_val), 2),
                 days_to_clean=(round(float(days_to_clean), 1) if has_evidence else None),
                 forecast_band_days=(round(float(band), 1) if has_evidence else None),
                 ci_lower=(round(float(ci_lower), 1) if has_evidence else None),

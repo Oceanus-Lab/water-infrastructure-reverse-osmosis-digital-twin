@@ -13,6 +13,7 @@ def test_unit_economics_delta_and_breakeven():
         "bank_id": ["A"] * days,
         "cycle_id": [1] * days,
         "days_since_replacement": range(days),
+        "reading_date": pd.date_range("2020-01-01", periods=days, freq="D"),
         SIGNAL: dp_rise
     })
     
@@ -39,6 +40,7 @@ def test_unit_economics_provenance_measured():
         "bank_id": ["F"] * 5,
         "cycle_id": [1] * 5,
         "days_since_replacement": range(5),
+        "reading_date": pd.date_range("2020-01-01", periods=5, freq="D"),
         SIGNAL: [0, 1, 2, 3, 4]
     })
     res = unit_economics(df, PARAMS)
@@ -52,6 +54,7 @@ def test_unit_economics_override_sensitivity():
         "bank_id": ["A"] * 5,
         "cycle_id": [1] * 5,
         "days_since_replacement": range(5),
+        "reading_date": pd.date_range("2020-01-01", periods=5, freq="D"),
         SIGNAL: [0, 1, 2, 3, 4]
     })
     
