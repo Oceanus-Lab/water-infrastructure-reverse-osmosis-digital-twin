@@ -28,9 +28,13 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 HERE = pathlib.Path(__file__).parent
-# source-tracing holds the economics model reused by the override endpoint. Added once at
-# import time; it used to be appended to sys.path on every POST.
-sys.path.append(str(HERE.parent / "source-tracing"))
+# The 003-006 modules (common, forecast_anomaly, economics) are imported at request time for
+# as-of-date evaluation. Cloud Run's build context is this directory only, so deploy.sh stages
+# them into _lib/; locally they are read from the sibling source-tracing checkout. Prefer the
+# staged copy, exactly like DATA below — without this the deployed service 500s with
+# ModuleNotFoundError: No module named 'forecast_anomaly'.
+_BUNDLED_LIB = HERE / "_lib"
+sys.path.append(str(_BUNDLED_LIB if _BUNDLED_LIB.exists() else HERE.parent / "source-tracing"))
 # economics.unit_economics returns None below this many valid readings — starting the history
 # loop here skips prefixes that can only produce None.
 _MIN_ECON_READINGS = 5
