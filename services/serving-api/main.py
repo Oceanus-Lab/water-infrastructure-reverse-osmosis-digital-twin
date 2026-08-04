@@ -126,6 +126,112 @@ def _get_active_cycles(date: str) -> dict:
     return last.set_index("unit_id")["cycle_id"].to_dict()
 
 
+# ── as-of-date evaluation ──────────────────────────────────────────────────────────────
+# forecasts.csv and economics.csv hold ONE row per (unit, cycle), computed from the whole
+# cycle. Serving those for a `?date=` inside the cycle leaks the future: asking for
+# 2020-04-01 returned a fouling slope and a health score derived from readings that had not
+# happened yet, and the numbers were byte-identical across four months of the timeline. For
+# a replay twin that is the defect that invalidates the whole scrubber. These helpers
+# recompute from readings truncated at `date`, using the same 003–006 functions.
+
+_ASOF_CACHE: dict[tuple, object] = {}
+_ASOF_CACHE_MAX = 4096
+
+
+def _data_version() -> tuple:
+    f = DATA / "readings.csv"
+    if not f.exists():
+        return ()
+    st = f.stat()
+    return (st.st_mtime, st.st_size)
+
+
+def _asof_cached(key: tuple, compute):
+    key = key + _data_version()
+    if key in _ASOF_CACHE:
+        return _ASOF_CACHE[key]
+    value = compute()
+    if len(_ASOF_CACHE) >= _ASOF_CACHE_MAX:
+        _ASOF_CACHE.clear()
+    _ASOF_CACHE[key] = value
+    return value
+
+
+def _cycle_as_of(unit_id: str, date: str):
+    """Rows of unit_id's then-active cycle up to `date`, with the 003 deviation attached.
+
+    The clean anchor is derived from the truncated frame on purpose: early in a cycle there
+    may not be 3 clean readings yet, and the honest answer then is "not enough evidence",
+    which is what the 003/004 helpers already return.
+    """
+    from common import add_deviation
+
+    r = _csv("readings.csv")
+    if r.empty:
+        return None
+    u = r[(r["unit_id"] == unit_id) & (r["reading_date"] <= date)]
+    if u.empty:
+        return None
+    cyc_id = u.sort_values("reading_date")["cycle_id"].iloc[-1]
+    return add_deviation(u[u["cycle_id"] == cyc_id].copy())
+
+
+def _forecast_as_of(unit_id: str, date: str):
+    def compute():
+        from forecast_anomaly import anomalies as _anoms, forecast_unit
+
+        cyc = _cycle_as_of(unit_id, date)
+        if cyc is None or cyc.empty:
+            return None
+        res = forecast_unit(cyc)
+        if res is None:
+            return None
+        found = _anoms(cyc)
+        res["anomalies_count"] = len(found)
+        res["anomalies"] = found
+        return res
+
+    return _asof_cached(("fc", unit_id, date), compute)
+
+
+def _nan_to_none(d: dict) -> dict:
+    return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in d.items()}
+
+
+def _economics_history(unit_id: str, date: str, params: dict | None = None) -> list[dict]:
+    """Economics recomputed at each day of the cycle up to `date`.
+
+    The breakeven chart plots this as a series, so it has to be the running value, not the
+    single end-of-cycle row economics.csv stores.
+    """
+    def compute():
+        from economics import PARAMS, unit_economics
+
+        cyc = _cycle_as_of(unit_id, date)
+        if cyc is None or cyc.empty:
+            return []
+        cyc = cyc.sort_values("reading_date")
+        out = []
+        for i in range(_MIN_ECON_READINGS, len(cyc) + 1):
+            res = unit_economics(cyc.iloc[:i], params or PARAMS)
+            if res is not None:
+                out.append(_nan_to_none(res))
+        return out
+
+    if params is not None:      # overrides are per-request, never cached
+        return compute()
+    return _asof_cached(("econ", unit_id, date), compute)
+
+
+def _economics_as_of(unit_id: str, date: str, params: dict | None = None):
+    history = _economics_history(unit_id, date, params)
+    return history[-1] if history else None
+
+
+def _unit_ids() -> list[str]:
+    return [f"{bank}{stage}" for bank in "ABCDEFG" for stage in ("01", "02", "03")]
+
+
 @app.get("/api/timeline")
 def timeline():
     r = _csv("readings.csv")
@@ -140,24 +246,14 @@ def timeline():
 
 @app.get("/api/fleet")
 def fleet(date: str = Query(...)):
-    fc = _csv("forecasts.csv")
-    cycles = _get_active_cycles(date)
-    by_unit = {}
-    for uid, cyc in cycles.items():
-        m = fc[(fc["unit_id"] == uid) & (fc["cycle_id"] == cyc)]
-        if not m.empty:
-            by_unit[uid] = m.iloc[0]
-            
     out = []
-    for bank in "ABCDEFG":
-        for stage in ("01", "02", "03"):
-            uid = f"{bank}{stage}"
-            r = by_unit.get(uid)
-            score = _health_score(r["current_rise"], r.get("anomalies_count", 0)) if r is not None else None
-            out.append({
-                "id": uid, "score": score, "status": _status(score),
-                "scoreSource": _measured(uid), "timestamp": date,
-            })
+    for uid in _unit_ids():
+        r = _forecast_as_of(uid, date)   # as-of, not the whole-cycle row from forecasts.csv
+        score = _health_score(r["current_rise"], r.get("anomalies_count", 0)) if r else None
+        out.append({
+            "id": uid, "score": score, "status": _status(score),
+            "scoreSource": _measured(uid), "timestamp": date,
+        })
     return out
 
 
@@ -176,7 +272,7 @@ def inspection(unit_id: str, date: str = Query(...)):
         }
     u = readings[(readings["unit_id"] == unit_id) & (readings["reading_date"] <= date)].sort_values("reading_date")
     last = u.iloc[-1] if not u.empty else None
-    
+
     days_since_clean = 0
     energy = None
     if last is not None:
@@ -187,8 +283,9 @@ def inspection(unit_id: str, date: str = Query(...)):
         # "days since clean" jump to ~1700 on C01/D01 cycle 4 (see common.cycle_days).
         _d = pd.to_datetime(cyc["reading_date"])
         days_since_clean = int((pd.to_datetime(last["reading_date"]) - _d.min()).days)
-        e = econ[(econ["unit_id"] == unit_id) & (econ["cycle_id"] == cyc_id)]
-        energy = float(e["daily_energy_penalty_usd"].iloc[-1]) if not e.empty else None
+        # as-of, not the whole-cycle row from economics.csv
+        e = _economics_as_of(unit_id, date)
+        energy = float(e["daily_energy_penalty_usd"]) if e else None
 
     src = _measured(unit_id)
     return {
@@ -206,43 +303,41 @@ def inspection(unit_id: str, date: str = Query(...)):
 
 @app.get("/api/alerts")
 def alerts(date: str = Query(...)):
-    fc = _csv("forecasts.csv")
     att = _csv("attributions.csv")
-    if fc.empty:
-        return []
-        
     cycles = _get_active_cycles(date)
-    
+    if not cycles:
+        return []
+
     mech = {}
     if not att.empty:
         for _, r in att.iterrows():
             if cycles.get(r["unit_id"]) == r["cycle_id"]:
                 mech[r["unit_id"]] = r["attributed_mechanism"]
-            
-    out, i = [], 0
-    
-    latest_fc = pd.DataFrame([
-        r for _, r in fc.iterrows() 
-        if cycles.get(r["unit_id"]) == r["cycle_id"]
-    ])
-    
-    if latest_fc.empty:
-        return []
-        
-    for _, r in latest_fc.sort_values("days_to_clean").iterrows():
-        dtc, anom = r["days_to_clean"], int(r.get("anomalies_count", 0))
-        if pd.notna(dtc) and dtc <= 21:
+
+    # as-of forecasts, so an alert is raised on the evidence available at `date` — the
+    # whole-cycle rows fired alerts on the timeline before the fouling had happened.
+    candidates = []
+    for uid in _unit_ids():
+        f = _forecast_as_of(uid, date)
+        if f:
+            candidates.append((uid, f))
+    candidates.sort(key=lambda t: (t[1].get("days_to_clean") is None,
+                                   t[1].get("days_to_clean") or 0.0))
+
+    out = []
+    for uid, f in candidates:
+        dtc, anom = f.get("days_to_clean"), int(f.get("anomalies_count", 0))
+        if dtc is not None and dtc <= 21:
             sev, msg = "critical", "Fouling threshold imminent"
+            ev = f"Projected to hit action threshold in ~{dtc:.0f} days"
         elif anom >= 8:
             sev, msg = "warning", "Elevated anomaly count"
+            ev = f"{anom} anomalies flagged this cycle"
         else:
             continue
-        i += 1
-        cause = mech.get(r["unit_id"], "unspecified")
-        ev = (f"Projected to hit action threshold in ~{dtc:.0f} days"
-              if pd.notna(dtc) and dtc <= 21 else f"{anom} anomalies flagged this cycle")
+        cause = mech.get(uid, "unspecified")
         out.append({
-            "id": f"alrt-{i}", "unitId": r["unit_id"], "severity": sev,
+            "id": f"alrt-{len(out) + 1}", "unitId": uid, "severity": sev,
             "message": f"{msg} ({cause})", "timestamp": date, "evidence": ev,
         })
     return out
@@ -275,58 +370,29 @@ def physics_deviation(unit_id: str, date: str = Query(...)):
 
 @app.get("/api/forecast/{unit_id}")
 def get_forecast(unit_id: str, date: str = Query(...)):
-    fc = _csv("forecasts.csv")
-    if fc.empty:
+    r = _forecast_as_of(unit_id, date)
+    if r is None:
         return None
-    
-    cycles = _get_active_cycles(date)
-    cyc = cycles.get(unit_id)
-    if not cyc:
-        return None
-        
-    unit_fc = fc[(fc["unit_id"] == unit_id) & (fc["cycle_id"] == cyc)]
-    if unit_fc.empty:
-        return None
-    
-    r = unit_fc.iloc[0]
-    has_evidence = pd.notna(r.get("days_to_clean"))
-    
     return {
         "unitId": r["unit_id"],
         "timestamp": date,
         "foulingRatePerDay": r["fouling_rate_per_day"],
         "trendR2": r["trend_r2"],
         "currentRise": r["current_rise"],
-        "daysToClean": r["days_to_clean"] if has_evidence else None,
-        "forecastBandDays": r["forecast_band_days"] if has_evidence else None,
-        "ciLower": r.get("ci_lower") if pd.notna(r.get("ci_lower")) else None,
-        "ciUpper": r.get("ci_upper") if pd.notna(r.get("ci_upper")) else None,
-        "forecastDrivers": _literal(r.get("forecast_drivers"), ["incomplete evidence"]),
-        "foulingOnsetScore": r.get("fouling_onset_score"),
-        "featureAttribution": _literal(r.get("feature_attribution"), ["unknown"]),
+        "daysToClean": r["days_to_clean"],
+        "forecastBandDays": r["forecast_band_days"],
+        "ciLower": r["ci_lower"],
+        "ciUpper": r["ci_upper"],
+        "forecastDrivers": r["forecast_drivers"],
+        "foulingOnsetScore": r["fouling_onset_score"],
+        "featureAttribution": r["feature_attribution"],
     }
 
 
 @app.get("/api/anomaly/{unit_id}")
 def get_anomaly(unit_id: str, date: str = Query(...)):
-    fc = _csv("forecasts.csv")
-    if fc.empty:
-        return []
-    
-    cycles = _get_active_cycles(date)
-    cyc = cycles.get(unit_id)
-    if not cyc:
-        return []
-        
-    unit_fc = fc[(fc["unit_id"] == unit_id) & (fc["cycle_id"] == cyc)]
-    if unit_fc.empty:
-        return []
-    
-    anomalies_str = unit_fc.iloc[0].get("anomalies", "[]")
-    if pd.isna(anomalies_str):
-        return []
-
-    return _literal(anomalies_str, [])
+    r = _forecast_as_of(unit_id, date)
+    return r["anomalies"] if r else []
 
 
 @app.get("/api/env")
@@ -366,22 +432,13 @@ def validation():
 
 @app.get("/api/economics/{unit_id}")
 def get_economics(unit_id: str, date: str = Query(...)):
-    econ = _csv("economics.csv")
-    cycles = _get_active_cycles(date)
-    cyc_id = cycles.get(unit_id)
-    if not cyc_id:
+    # as-of, not the whole-cycle row from economics.csv. That file holds ONE row per
+    # (unit, cycle) computed from the entire cycle, so it reported the end-of-cycle penalty
+    # no matter where the timeline sat.
+    history = _economics_history(unit_id, date)
+    if not history:
         return None
-    e = econ[(econ["unit_id"] == unit_id) & (econ["cycle_id"] == cyc_id)]
-    if e.empty:
-        return None
-
-    def clean_dict(d):
-        return {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in d.items()}
-
-    history = [clean_dict(row.to_dict()) for _, row in e.iterrows()]
-    current = history[-1]
-    
-    return {"current": current, "history": history}
+    return {"current": history[-1], "history": history}
 
 
 @app.post("/api/economics/{unit_id}/override")
