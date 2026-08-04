@@ -3,6 +3,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Droplet } from "lucide-react";
 import { AssistantTrigger } from "@/components/assistant/assistant-trigger";
+import { DataSourceBanner } from "@/components/data-source-banner";
 
 export function NavHeader() {
   const pathname = usePathname();
@@ -14,7 +15,7 @@ export function NavHeader() {
   return (
     <header className="sticky top-0 z-50 flex items-center justify-between px-6 py-3 border-b bg-background">
       <div className="flex items-center gap-2 w-[180px]">
-        {/* Spacer for flex balancing */}
+        <DataSourceBanner />
       </div>
       
       <Tabs 

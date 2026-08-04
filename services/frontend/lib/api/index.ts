@@ -4,17 +4,29 @@ import { getMockInspection } from "../data/mock-inspection";
 import { getMockAlerts } from "../data/mock-alerts";
 import { mockValidation } from "../data/mock-validation";
 
+import { useDataSourceStore } from "../store/data-source-store";
+
 // Real serving API (ro-serving-api). Falls back to mock data if the API is unreachable,
 // so the UI still renders offline. Set NEXT_PUBLIC_API_URL to override the default.
+//
+// NOTE: NEXT_PUBLIC_* is inlined at `next build`, not read at runtime — setting it as a
+// Cloud Run environment variable has no effect on this value. It must be passed at image
+// build time (see services/frontend/README.md).
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function live<T>(path: string, fallback: () => T): Promise<T> {
   try {
     const res = await fetch(`${API}${path}`, { cache: "no-store" });
-    if (!res.ok) throw new Error(`${res.status}`);
-    return (await res.json()) as T;
-  } catch {
-    return fallback(); // graceful fallback to mock
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as T;
+    useDataSourceStore.getState().markLive(path);
+    return data;
+  } catch (err) {
+    // Still fall back so the UI renders, but record it — DataSourceBanner surfaces this.
+    // Returning invented numbers with no visible marker is the one thing this product
+    // must never do.
+    useDataSourceStore.getState().markMock(path, err instanceof Error ? err.message : String(err));
+    return fallback();
   }
 }
 
