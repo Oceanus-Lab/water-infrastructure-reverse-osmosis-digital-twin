@@ -80,6 +80,9 @@ export async function fetchGrounding(
   specialists: SpecialistId[],
   rawUnits: string[],
   date: string = DEFAULT_DATE,
+  // The Document specialist retrieves against the question itself, so the raw text has to
+  // reach here rather than only the units parsed out of it.
+  question = '',
 ): Promise<Grounding> {
   const units = rawUnits.slice(0, 4); // bound the fan-out
   const scope: 'unit' | 'fleet' = units.length > 0 ? 'unit' : 'fleet';
@@ -117,13 +120,22 @@ export async function fetchGrounding(
   const simUnits = units.length > 0 ? units : await worstUnits(q, FLEET_FANOUT);
 
   if (specialists.includes('simulation')) {
+    // The trend forecast, plus the WaterTAP clean-membrane baseline the trend is measured
+    // against. Until now this specialist only ever saw a linear fit, so "simulation" named
+    // something it did not do; /api/physics/simulate is the actual flowsheet solve
+    // (fidelity="high"). It is allowed to be null — WaterTAP is a heavy optional dependency
+    // and the analytical path stands on its own (FR-011).
+    const [units, physics] = await Promise.all([
+      Promise.all(
+        simUnits.map(async (u) => ({ unitId: u, forecast: await q(`/api/forecast/${u}`) })),
+      ),
+      getJson('/api/physics/simulate'),
+    ]);
+
     data.simulation = {
       scope,
-      units: (
-        await Promise.all(
-          simUnits.map(async (u) => ({ unitId: u, forecast: await q(`/api/forecast/${u}`) })),
-        )
-      ).filter((r) => r.forecast !== null),
+      units: units.filter((r) => r.forecast !== null),
+      cleanMembraneBaseline: physics,
     };
   }
 
@@ -139,9 +151,17 @@ export async function fetchGrounding(
   }
 
   if (specialists.includes('document')) {
-    // RAG over plant docs (ro_embeddings.doc_embeddings) is not wired into this harness yet —
-    // the specialist returns an honest non-answer rather than inventing a spec.
-    data.document = { note: 'no plant-document corpus is available to this harness' };
+    // RAG over ro_embeddings.doc_embeddings, retrieved through the serving-api's
+    // VECTOR_SEARCH endpoint. The corpus is this project's own procedures and design notes
+    // (pipeline/ingest/embed_docs.py) — not manufacturer datasheets — so source_document is
+    // passed through for the specialist to attribute.
+    const hits = (await getJson(
+      `/api/docs/search?q=${encodeURIComponent(question)}&top_k=4`,
+    )) as { results?: unknown[] } | null;
+
+    data.document = hits?.results?.length
+      ? { scope: 'corpus', corpus: 'project procedures and design notes', passages: hits.results }
+      : { note: 'no plant-document corpus is available to this harness' };
   }
 
   return { scope, units, date, data };

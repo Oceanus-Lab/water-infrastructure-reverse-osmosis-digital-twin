@@ -33,7 +33,7 @@ if [[ "${1:-}" == "--" ]]; then
 fi
 
 # Modules main.py imports at request time. Keep in sync with the imports in main.py.
-LIB_MODULES=(common.py forecast_anomaly.py economics.py)
+LIB_MODULES=(common.py forecast_anomaly.py economics.py physics.py)
 
 echo "==> Staging data/ and _lib/ from ${SOURCE_TRACING}"
 rm -rf "${HERE}/data" "${HERE}/_lib"
@@ -61,7 +61,7 @@ echo "    data/: $(ls -1 "${HERE}/data" | wc -l | tr -d ' ') files, _lib/: ${LIB
 # Fail before a 5-minute build rather than after it.
 echo "==> Import check"
 (cd "${HERE}" && PYTHONPATH="${HERE}/_lib" python3 -c "
-import common, forecast_anomaly, economics
+import common, forecast_anomaly, economics, physics
 print('    modules import cleanly')
 ") || { echo "Error: staged modules do not import." >&2; exit 1; }
 

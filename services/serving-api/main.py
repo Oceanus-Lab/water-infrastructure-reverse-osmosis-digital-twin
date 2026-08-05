@@ -620,8 +620,137 @@ def bq_forecast(unit_id: str):
     }
 
 
+_BQ_EMBED_DATASET = os.environ.get("BQ_EMBEDDINGS_DATASET", "ro_embeddings")
+
+
+@app.get("/api/docs/search")
+def docs_search(q: str = Query(..., min_length=3), top_k: int = Query(4, ge=1, le=10)):
+    """Semantic search over the plant-knowledge corpus (VECTOR_SEARCH, in BigQuery).
+
+    The Document specialist issued a real VECTOR_SEARCH against an empty table, so one of the
+    assistant's four specialists contributed nothing. pipeline/ingest/embed_docs.py fills the
+    corpus; this is what reads it.
+
+    Every hit carries `source_document`, because the corpus is this project's own procedures
+    and design notes — not manufacturer datasheets — and an operator has to be able to see
+    that.
+    """
+    escaped = q.replace("\\", "\\\\").replace("'", "\\'")
+    rows = _bq_query(f"""
+        WITH query_embedding AS (
+          SELECT ml_generate_embedding_result AS embedding
+          FROM ML.GENERATE_EMBEDDING(
+            MODEL `{_BQ_PROJECT}.{_BQ_EMBED_DATASET}.embedding_model`,
+            (SELECT '{escaped}' AS content),
+            STRUCT(TRUE AS flatten_json_output, 'RETRIEVAL_QUERY' AS task_type))
+        )
+        SELECT base.source_document, base.section, base.category,
+               base.chunk_text, ROUND(distance, 4) AS distance
+        FROM VECTOR_SEARCH(
+          TABLE `{_BQ_PROJECT}.{_BQ_EMBED_DATASET}.doc_embeddings`, 'embedding',
+          (SELECT embedding FROM query_embedding),
+          top_k => {int(top_k)}, distance_type => 'COSINE')
+        ORDER BY distance
+    """)
+    if rows is None:
+        raise HTTPException(status_code=503,
+                            detail="document corpus unavailable — run pipeline/ingest/embed_docs.py")
+    return {"query": q, "computedIn": "bigquery", "method": "VECTOR_SEARCH", "results": rows}
+
+
+_WATERTAP_URL = os.environ.get("WATERTAP_API_URL", "")
+
+
+def _solve(point: dict) -> dict:
+    """Solve one operating point, preferring the watertap-engine service.
+
+    WaterTAP is not in this image's requirements — the Pyomo/IDAES/Ipopt stack needs its own
+    Dockerfile and solver binaries, which is why docs/05-gcp-infrastructure.md specifies a
+    separate `watertap-engine` service. Deployed, that service does the solving; locally, the
+    sibling source-tracing checkout has WaterTAP installed and answers directly. Neither
+    available means available=False with a reason, never a 500 (FR-011).
+    """
+    if _WATERTAP_URL:
+        try:
+            import urllib.request
+
+            req = urllib.request.Request(
+                f"{_WATERTAP_URL.rstrip('/')}/predict",
+                data=json.dumps(point).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=180) as r:
+                return {**json.load(r), "solvedBy": "watertap-engine"}
+        except Exception as exc:
+            return {"available": False,
+                    "reason": f"watertap-engine unreachable: {type(exc).__name__}"}
+    try:
+        from physics import simulate
+
+        return {**simulate(**point), "solvedBy": "in-process"}
+    except ImportError as exc:
+        return {"available": False, "reason": f"WaterTAP not installed: {exc}"}
+
+
+@app.get("/api/physics/simulate")
+def physics_simulate(
+    tds_ppm: float = Query(1500.0),
+    temp_c: float = Query(23.0),
+    pressure_bar: float = Query(15.0),
+    recovery: float = Query(0.85),
+    membrane_area_m2: float = Query(50.0),
+):
+    """Clean-membrane WaterTAP solve at one operating point (fidelity="high").
+
+    The Simulation specialist read /api/forecast — a linear trend — so nothing in the running
+    system ever called the physics engine, despite it solving to optimal whenever asked.
+    Absent WaterTAP this returns available=False with a reason rather than 500-ing (FR-011),
+    since the analytical path already covers every reading.
+    """
+    return _solve({"tds_ppm": tds_ppm, "temp_c": temp_c, "pressure_bar": pressure_bar,
+                   "recovery": recovery, "membrane_area_m2": membrane_area_m2})
+
+
+@app.post("/api/physics/what-if")
+def physics_what_if(payload: dict):
+    """Two solves — as-is and changed — reported as a delta.
+
+    Deltas rather than absolutes, matching the economics framing: absolute flux carries model
+    uncertainty that largely cancels between two solves of the same flowsheet.
+
+    Body: {"base": {"pressure_bar": 15, ...}, "change": {"pressure_bar": 20}}
+    """
+    base = payload.get("base") or {}
+    change = payload.get("change") or {}
+    if not isinstance(base, dict) or not isinstance(change, dict):
+        raise HTTPException(status_code=422, detail="base and change must be objects")
+    if not change:
+        raise HTTPException(status_code=422, detail="change must name at least one parameter")
+
+    allowed = {"tds_ppm", "temp_c", "pressure_bar", "recovery", "membrane_area_m2"}
+    unknown = sorted((set(base) | set(change)) - allowed)
+    if unknown:
+        raise HTTPException(status_code=422,
+                            detail=f"unknown parameter(s): {unknown}; allowed: {sorted(allowed)}")
+    for k, v in {**base, **change}.items():
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            raise HTTPException(status_code=422, detail=f"parameter '{k}' must be a number")
+
+    baseline = _solve(base)
+    scenario = _solve({**base, **change})
+    delta = None
+    if baseline.get("fidelity") == "high" and scenario.get("fidelity") == "high":
+        delta = {
+            "flux_kg_m2_h": round(scenario["clean_water_flux_kg_m2_h"]
+                                  - baseline["clean_water_flux_kg_m2_h"], 3),
+            "rejection_pct": round(scenario["clean_salt_rejection_pct"]
+                                   - baseline["clean_salt_rejection_pct"], 3),
+        }
+    return {"baseline": baseline, "scenario": scenario, "change": change, "delta": delta}
+
+
 @app.get("/")
 def root():
     return {"service": "ro-serving-api", "endpoints": ["/api/fleet", "/api/inspection/{id}",
-                                                        "/api/alerts", "/api/timeline", "/api/physics-deviation/{unit_id}", "/api/forecast/{unit_id}", "/api/anomaly/{unit_id}", "/api/validation", "/api/economics/{unit_id}", "/api/bq-forecast/{unit_id}"]}
+                                                        "/api/alerts", "/api/timeline", "/api/physics-deviation/{unit_id}", "/api/forecast/{unit_id}", "/api/anomaly/{unit_id}", "/api/validation", "/api/economics/{unit_id}", "/api/bq-forecast/{unit_id}", "/api/docs/search", "/api/physics/simulate", "/api/physics/what-if"]}
 

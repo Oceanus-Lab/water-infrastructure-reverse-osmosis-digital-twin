@@ -97,7 +97,7 @@ export async function runHarness(
 
   // 2. Ground (merge router units with a regex pass so we never miss an explicit unit).
   const units = [...new Set([...decision.units, ...extractUnits(question)])];
-  const grounding = await fetchGrounding(decision.specialists, units, date);
+  const grounding = await fetchGrounding(decision.specialists, units, date, question);
 
   // 3. Specialists reason in parallel, each over ONLY its grounding.
   const findings = await Promise.all(

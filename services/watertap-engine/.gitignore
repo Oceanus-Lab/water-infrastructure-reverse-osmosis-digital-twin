@@ -1,0 +1,4 @@
+# Staged from ../source-tracing at deploy time so the flowsheet has one definition.
+physics.py
+__pycache__/
+*.pyc
