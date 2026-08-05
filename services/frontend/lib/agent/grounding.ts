@@ -62,9 +62,25 @@ export function extractUnits(question: string): string[] {
   return [...units];
 }
 
-async function getJson(path: string): Promise<unknown | null> {
+/** Grounding legs the answer cannot be produced without. */
+const REQUIRED_TIMEOUT_MS = 30_000;
+
+/**
+ * Budget for legs that merely enrich an answer.
+ *
+ * watertap-engine is scale-to-zero with a heavy image (Pyomo/IDAES/Ipopt), so its cold start
+ * is ~22 s against ~0.3 s warm — measured. Blocking a chat answer on that to attach a
+ * clean-membrane baseline is the wrong trade: the specialist reasons perfectly well without
+ * it, and 22 s of silence is what an operator actually notices.
+ */
+const OPTIONAL_TIMEOUT_MS = 3_000;
+
+async function getJson(path: string, timeoutMs = REQUIRED_TIMEOUT_MS): Promise<unknown | null> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}${path}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -129,13 +145,15 @@ export async function fetchGrounding(
       Promise.all(
         simUnits.map(async (u) => ({ unitId: u, forecast: await q(`/api/forecast/${u}`) })),
       ),
-      getJson('/api/physics/simulate'),
+      // Optional budget: a cold watertap-engine would otherwise add ~22 s to the answer.
+      getJson('/api/physics/simulate', OPTIONAL_TIMEOUT_MS),
     ]);
 
     data.simulation = {
       scope,
       units: units.filter((r) => r.forecast !== null),
-      cleanMembraneBaseline: physics,
+      // Named so the specialist can tell "the solver said no" from "we did not wait for it".
+      cleanMembraneBaseline: physics ?? { available: false, reason: 'physics solve not ready in time' },
     };
   }
 
@@ -155,8 +173,12 @@ export async function fetchGrounding(
     // VECTOR_SEARCH endpoint. The corpus is this project's own procedures and design notes
     // (pipeline/ingest/embed_docs.py) — not manufacturer datasheets — so source_document is
     // passed through for the specialist to attribute.
+    // Retrieval is an embed + VECTOR_SEARCH round trip (~3 s measured). Given a slightly
+    // wider budget than the physics leg since a procedure question is unanswerable without
+    // it, but still bounded — a stalled BigQuery must not hold the whole answer.
     const hits = (await getJson(
       `/api/docs/search?q=${encodeURIComponent(question)}&top_k=4`,
+      8_000,
     )) as { results?: unknown[] } | null;
 
     data.document = hits?.results?.length

@@ -312,6 +312,23 @@ def qa_gcp():
             warn(f"{DST_PROJECT} ro_forecasts.{table} not built",
                  "run Dataform with --tags bqml")
 
+    # The assistant's two BigQuery dependencies. Both fail silently when absent: the Document
+    # specialist swallows a failed lookup and reports "no corpus", and a missing qa_cache
+    # removes the fallback that keeps the assistant answering under the agent quota — which
+    # is exactly what happened here, 404-ing on every question with nothing user-visible.
+    for table, label in (("doc_embeddings", "document corpus"), ("qa_cache", "semantic cache")):
+        try:
+            r = _bq(DST_PROJECT, f"SELECT COUNT(*) n FROM `{DST_PROJECT}.ro_embeddings.{table}`")[0]
+            n = int(r["n"])
+            if table == "doc_embeddings":
+                check(f"{DST_PROJECT} {label} embedded", n > 0,
+                      f"{n} chunks" if n else "empty — run pipeline/ingest/embed_docs.py")
+            else:
+                # Empty is fine (it fills as questions are answered); missing is not.
+                ok(f"{DST_PROJECT} {label} present", f"{n} entries")
+        except Exception as exc:
+            bad(f"{DST_PROJECT} {label} unavailable", str(exc)[:110])
+
     # Deployed Cloud Run services — are they serving anything real?
     for project in (DST_PROJECT, SRC_PROJECT):
         try:
