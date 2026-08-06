@@ -329,6 +329,17 @@ def qa_gcp():
         except Exception as exc:
             bad(f"{DST_PROJECT} {label} unavailable", str(exc)[:110])
 
+    # The assistant's only write path. Its tables live in Terraform, not Dataform, so a
+    # project built by running the Dataform graph has neither — and the approve route then
+    # 500s on "Table not found", which is what kept decision_log empty.
+    for table in ("decision_log", "agent_memory"):
+        try:
+            r = _bq(DST_PROJECT, f"SELECT COUNT(*) n FROM `{DST_PROJECT}.ro_serving.{table}`")[0]
+            # Rows are optional — these fill as operators approve things. Existing is not.
+            ok(f"{DST_PROJECT} ro_serving.{table} present", f"{int(r['n'])} rows")
+        except Exception as exc:
+            bad(f"{DST_PROJECT} ro_serving.{table} missing", str(exc)[:110])
+
     # Deployed Cloud Run services — are they serving anything real?
     for project in (DST_PROJECT, SRC_PROJECT):
         try:
