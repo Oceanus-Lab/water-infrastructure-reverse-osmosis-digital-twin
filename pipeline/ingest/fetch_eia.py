@@ -5,7 +5,7 @@ from google.cloud import bigquery
 import argparse
 
 EIA_API_KEY = os.environ.get("EIA_API_KEY")
-PROJECT_ID = "spatial-cat-489006-a4"
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "spatial-cat-489006-a4")
 DATASET_ID = "ro_raw"
 STATE_ID = "CA"  # For OCWD
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 import pathlib
 import numpy as np
 import pandas as pd
-from common import load_readings, DATA
+from common import load_readings, DATA, clean_anchor as _clean_anchor, CLEAN_DAYS
 
 # metrics we interpret, and whether a rise means worse membrane health
 METRICS = {
@@ -38,17 +38,15 @@ def _safe_std(series) -> float:
     return float(v) if (v and not np.isnan(v)) else 1.0
 
 
-def clean_anchor(cyc: pd.DataFrame, col: str) -> float | None:
-    """Expected clean-membrane value = mean over the freshly-cleaned start of the cycle."""
-    early = cyc[cyc["days_since_replacement"] <= cyc["days_since_replacement"].min() + CLEAN_DAYS]
-    early = early[col].dropna()
-    return float(early.mean()) if len(early) >= 3 else None
+# Re-exported from common so 003/004/005/006 share ONE definition. This module used to keep
+# its own copy; they agreed by coincidence until either was touched.
+clean_anchor = _clean_anchor
 
 
 def compute(df: pd.DataFrame) -> pd.DataFrame:
     out = []
     for (unit, cycle), cyc in df.groupby(["unit_id", "cycle_id"]):
-        cyc = cyc.sort_values("days_since_replacement")
+        cyc = cyc.sort_values("reading_date")
         anchors = {m: clean_anchor(cyc, m) for m in METRICS}
         stds = {m: _safe_std(cyc[m]) for m in METRICS}
         for _, r in cyc.iterrows():
@@ -62,10 +60,13 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
                                     status="unavailable"))
                     continue
                 dev = actual - exp
-                dev_pct = 100.0 * dev / exp if exp else np.nan
                 z = dev / stds[m]
                 # orient so positive deviation == worse health
                 signed = dev if meta["worse"] == "up" else -dev
+                # ...and orient the percentage the SAME way. It used the raw dev, so for
+                # unit_recovery (worse == "down") `deviation` and `deviation_pct` carried
+                # opposite signs on the same row — a UI showing both contradicted itself.
+                dev_pct = 100.0 * signed / abs(exp) if exp else np.nan
                 status = "out-of-range" if abs(z) > OUT_OF_RANGE_Z else "ok"
                 out.append(dict(unit_id=unit, cycle_id=cycle, reading_date=r["reading_date"],
                                 metric=m, expected_clean=round(exp, 3),

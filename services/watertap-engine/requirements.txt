@@ -1,0 +1,4 @@
+# Pinned to the version the spike validated (CLAUDE.md: WaterTAP 1.6.0, Python 3.11 only).
+watertap==1.6.0
+fastapi>=0.115
+uvicorn>=0.30

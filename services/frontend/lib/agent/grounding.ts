@@ -7,8 +7,33 @@
  */
 import type { SpecialistId } from './prompts';
 
+// SERVING_API_URL first: this module runs server-side, and NEXT_PUBLIC_API_URL is inlined at
+// build time, so an image built with it still reads `undefined` at runtime unless the same
+// value is also present in the environment. Deploy sets SERVING_API_URL as a runtime var.
 const API_BASE =
   process.env.SERVING_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+/** How many units a fleet-scope question pulls per-unit detail for. */
+const FLEET_FANOUT = 5;
+
+/**
+ * The least healthy units right now, lowest score first.
+ *
+ * /api/fleet is one request and already ranks the fleet, so this costs one call instead of
+ * 21 — which is what made the fleet path exceed Cloud Run's request timeout. Units with no
+ * score yet (not enough evidence in-cycle) sort last rather than first.
+ */
+async function worstUnits(
+  q: (path: string) => Promise<unknown>,
+  limit: number,
+): Promise<string[]> {
+  const fleet = (await q('/api/fleet')) as { id: string; score: number | null }[] | null;
+  if (!Array.isArray(fleet)) return [];
+  return [...fleet]
+    .sort((a, b) => (a.score ?? Infinity) - (b.score ?? Infinity))
+    .slice(0, limit)
+    .map((u) => u.id);
+}
 
 // Default "now" = the last replay date in the dataset. The frontend may pass its replay-clock date.
 export const DEFAULT_DATE = '2021-01-13';
@@ -37,9 +62,25 @@ export function extractUnits(question: string): string[] {
   return [...units];
 }
 
-async function getJson(path: string): Promise<unknown | null> {
+/** Grounding legs the answer cannot be produced without. */
+const REQUIRED_TIMEOUT_MS = 30_000;
+
+/**
+ * Budget for legs that merely enrich an answer.
+ *
+ * watertap-engine is scale-to-zero with a heavy image (Pyomo/IDAES/Ipopt), so its cold start
+ * is ~22 s against ~0.3 s warm — measured. Blocking a chat answer on that to attach a
+ * clean-membrane baseline is the wrong trade: the specialist reasons perfectly well without
+ * it, and 22 s of silence is what an operator actually notices.
+ */
+const OPTIONAL_TIMEOUT_MS = 3_000;
+
+async function getJson(path: string, timeoutMs = REQUIRED_TIMEOUT_MS): Promise<unknown | null> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+    const res = await fetch(`${API_BASE}${path}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -55,6 +96,9 @@ export async function fetchGrounding(
   specialists: SpecialistId[],
   rawUnits: string[],
   date: string = DEFAULT_DATE,
+  // The Document specialist retrieves against the question itself, so the raw text has to
+  // reach here rather than only the units parsed out of it.
+  question = '',
 ): Promise<Grounding> {
   const units = rawUnits.slice(0, 4); // bound the fan-out
   const scope: 'unit' | 'fleet' = units.length > 0 ? 'unit' : 'fleet';
@@ -81,26 +125,65 @@ export async function fetchGrounding(
     }
   }
 
+  // Fleet-scope questions ("which unit is fouling fastest?") name no unit, so `units` is
+  // empty and these two specialists used to fetch nothing — the assistant then answered the
+  // flagship question with "the data does not include a rate of change", which is honest but
+  // useless when /api/forecast carries foulingRatePerDay for every unit.
+  //
+  // Fanning out to all 21 is not the answer either: each forecast is computed as-of the date,
+  // and 21 of them blew past Cloud Run's request timeout. Take the least healthy units — for
+  // "fouling fastest" / "clean now or wait", those are the ones the question is about.
+  const simUnits = units.length > 0 ? units : await worstUnits(q, FLEET_FANOUT);
+
   if (specialists.includes('simulation')) {
-    data.simulation = {
-      units: await Promise.all(
-        units.map(async (u) => ({ unitId: u, forecast: await q(`/api/forecast/${u}`) })),
+    // The trend forecast, plus the WaterTAP clean-membrane baseline the trend is measured
+    // against. Until now this specialist only ever saw a linear fit, so "simulation" named
+    // something it did not do; /api/physics/simulate is the actual flowsheet solve
+    // (fidelity="high"). It is allowed to be null — WaterTAP is a heavy optional dependency
+    // and the analytical path stands on its own (FR-011).
+    const [units, physics] = await Promise.all([
+      Promise.all(
+        simUnits.map(async (u) => ({ unitId: u, forecast: await q(`/api/forecast/${u}`) })),
       ),
+      // Optional budget: a cold watertap-engine would otherwise add ~22 s to the answer.
+      getJson('/api/physics/simulate', OPTIONAL_TIMEOUT_MS),
+    ]);
+
+    data.simulation = {
+      scope,
+      units: units.filter((r) => r.forecast !== null),
+      // Named so the specialist can tell "the solver said no" from "we did not wait for it".
+      cleanMembraneBaseline: physics ?? { available: false, reason: 'physics solve not ready in time' },
     };
   }
 
   if (specialists.includes('economics')) {
     data.economics = {
-      units: await Promise.all(
-        units.map(async (u) => ({ unitId: u, economics: await q(`/api/economics/${u}`) })),
-      ),
+      scope,
+      units: (
+        await Promise.all(
+          simUnits.map(async (u) => ({ unitId: u, economics: await q(`/api/economics/${u}`) })),
+        )
+      ).filter((r) => r.economics !== null),
     };
   }
 
   if (specialists.includes('document')) {
-    // RAG over plant docs (ro_embeddings.doc_embeddings) is not wired into this harness yet —
-    // the specialist returns an honest non-answer rather than inventing a spec.
-    data.document = { note: 'no plant-document corpus is available to this harness' };
+    // RAG over ro_embeddings.doc_embeddings, retrieved through the serving-api's
+    // VECTOR_SEARCH endpoint. The corpus is this project's own procedures and design notes
+    // (pipeline/ingest/embed_docs.py) — not manufacturer datasheets — so source_document is
+    // passed through for the specialist to attribute.
+    // Retrieval is an embed + VECTOR_SEARCH round trip (~3 s measured). Given a slightly
+    // wider budget than the physics leg since a procedure question is unanswerable without
+    // it, but still bounded — a stalled BigQuery must not hold the whole answer.
+    const hits = (await getJson(
+      `/api/docs/search?q=${encodeURIComponent(question)}&top_k=4`,
+      8_000,
+    )) as { results?: unknown[] } | null;
+
+    data.document = hits?.results?.length
+      ? { scope: 'corpus', corpus: 'project procedures and design notes', passages: hits.results }
+      : { note: 'no plant-document corpus is available to this harness' };
   }
 
   return { scope, units, date, data };

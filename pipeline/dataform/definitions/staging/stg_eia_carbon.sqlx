@@ -11,7 +11,7 @@ WITH mix_data AS (
     fuel_type,
     SUM(generation_mwh) as mwh
   FROM
-    `spatial-cat-489006-a4.ro_raw.eia_generation_mix_raw`
+    `${dataform.projectConfig.defaultDatabase}`.ro_raw.eia_generation_mix_raw
   GROUP BY 1, 2, 3
 ),
 total_gen AS (
@@ -30,12 +30,19 @@ emissions AS (
     m.mwh,
     t.total_mwh,
     m.mwh / NULLIF(t.total_mwh, 0) as pct_mix,
-    -- Rough average emission factors kg CO2 per MWh
+    -- Rough average emission factors, kg CO2 per MWh.
+    --
+    -- Two vocabularies reach this table and both must match. fetch_eia.py passes through the
+    -- EIA API's fueltypeid codes (COW, NG, PET); load_eia_bulk.py labels the Total Energy
+    -- series with readable names (coal, natural_gas, petroleum). Only the codes were listed,
+    -- so a bulk-loaded mix scored 0 for every fuel and grid_carbon_intensity came out 0.0 —
+    -- a number that looks like a clean grid rather than an unmatched join.
     CASE
-      WHEN m.fuel_type IN ('COW', 'COL') THEN 1000 -- Coal
-      WHEN m.fuel_type IN ('NG', 'NGAS') THEN 400 -- Natural Gas
-      WHEN m.fuel_type IN ('PET') THEN 800 -- Petroleum
-      ELSE 0 -- Renewables, Nuclear, etc.
+      WHEN LOWER(m.fuel_type) IN ('cow', 'col', 'coal')                    THEN 1000 -- Coal
+      WHEN LOWER(m.fuel_type) IN ('ng', 'ngas', 'natural_gas')             THEN 400  -- Natural gas
+      WHEN LOWER(m.fuel_type) IN ('pet', 'petroleum')                      THEN 800  -- Petroleum
+      WHEN LOWER(m.fuel_type) IN ('wod', 'wood', 'was', 'waste', 'biomass') THEN 300 -- Biogenic
+      ELSE 0 -- Nuclear, hydro, wind, solar, geothermal
     END as factor_kg_per_mwh
   FROM mix_data m
   JOIN total_gen t ON m.date = t.date AND m.state_id = t.state_id

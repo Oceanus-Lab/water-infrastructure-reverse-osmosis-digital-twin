@@ -1,0 +1,59 @@
+name: Model Eval (fouling backtest gate)
+
+# Re-runs the 71-CIP fouling backtest on the REAL OCWD data and fails if the model
+# regresses past the committed baseline (services/source-tracing/eval/baseline_metrics.json).
+# Manual + weekly.
+#
+# One-time setup to enable: add GCP auth so `bq` can read ro_curated.unit_readings.
+# Recommended = Workload Identity Federation (no long-lived key):
+#   secrets.GCP_WIF_PROVIDER  — the WIF provider resource name
+#   secrets.GCP_SA_EMAIL      — a service account with BigQuery Data Viewer + Job User
+# Until those secrets exist, the auth step (and this workflow) is skipped by design.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+jobs:
+  backtest-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -r services/source-tracing/requirements-dev.txt
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Extract real readings from BigQuery (read-only)
+        run: |
+          bq query --use_legacy_sql=false --format=csv --max_rows=20000 \
+            'SELECT * FROM `spatial-cat-489006-a4.ro_curated.unit_readings` ORDER BY unit_id, reading_date' \
+            > services/source-tracing/data/readings.csv
+          echo "rows: $(wc -l < services/source-tracing/data/readings.csv)"
+
+      - name: Regenerate backtest (003 → 004 → 005)
+        working-directory: services/source-tracing
+        run: |
+          python deviation.py
+          python forecast_anomaly.py
+          python fouling_validation.py
+
+      - name: Regression gate (fresh report vs committed baseline)
+        run: |
+          python services/source-tracing/eval/metrics_gate.py \
+            --report services/source-tracing/data/validation_report.json \
+            --baseline services/source-tracing/eval/baseline_metrics.json

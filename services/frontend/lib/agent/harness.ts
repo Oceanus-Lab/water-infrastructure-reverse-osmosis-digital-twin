@@ -6,13 +6,30 @@
  * Flow: router picks specialists + units → grounding is fetched from serving-api → each specialist
  * reasons over ONLY its grounding → the coordinator composes one answer, streamed to the caller.
  */
-import { Type, type GoogleGenAI } from '@google/genai';
+import { ThinkingLevel, Type, type GoogleGenAI } from '@google/genai';
 import { ROUTER_SYSTEM, COMPOSER_SYSTEM, SPECIALIST_SYSTEM, type SpecialistId } from './prompts';
 import { extractUnits, fetchGrounding, DEFAULT_DATE } from './grounding';
 
+// One model throughout.
+//
+// Latency was measured per stage on the deployed service: route 2-11 s, specialists 8-10 s,
+// compose 1.7-3.2 s, of a ~24 s total. A single specialist alone still took 9.5 s, so it is
+// per-call latency rather than fan-out, and thinkingLevel LOW moved nothing.
+//
+// Routing the cheap stages to gemini-2.5-flash was tried and reverted: that model is not
+// served on this enterprise endpoint, so every call threw and the harness fell straight to
+// its "couldn't complete that answer" fallback — a 1.2 s response that looked fast and said
+// nothing. Left here so the next person does not repeat the experiment.
 const MODEL = 'gemini-3-flash-preview';
 const ALL_SPECIALISTS: SpecialistId[] = ['dataAnalyst', 'simulation', 'economics', 'document'];
 const MAX_CONTEXT_CHARS = 6000;
+
+// Gemini 3 reasons before answering by default. Measured on the deployed service: the router
+// took 2.6 s and the specialist fan-out 8.7 s of a 20 s total, for two jobs that need no
+// deliberation — the router classifies into a fixed set, and a specialist restates figures it
+// was handed under a rule about what it may cite. The composer keeps the default budget; that
+// is where the reasoning actually earns its latency.
+const FAST = { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } };
 
 interface RouterDecision {
   specialists: SpecialistId[];
@@ -27,6 +44,7 @@ async function route(ai: GoogleGenAI, question: string): Promise<RouterDecision>
     config: {
       systemInstruction: ROUTER_SYSTEM,
       temperature: 0,
+      ...FAST,
       responseMimeType: 'application/json',
       // Structured output guarantees clean JSON (the model otherwise sometimes emits trailing
       // braces or markdown fences that break JSON.parse).
@@ -73,7 +91,7 @@ async function runSpecialist(
   const res = await ai.models.generateContent({
     model: MODEL,
     contents: `CONTEXT (the only data you may cite):\n${ctx}`,
-    config: { systemInstruction: SPECIALIST_SYSTEM[id], temperature: 0.2 },
+    config: { systemInstruction: SPECIALIST_SYSTEM[id], temperature: 0.2, ...FAST },
   });
   return { id, finding: res.text ?? '' };
 }
@@ -88,8 +106,17 @@ export async function runHarness(
   onToken: (text: string) => void,
   date: string = DEFAULT_DATE,
 ): Promise<void> {
+  // Stage timings, so latency can be attributed rather than guessed at from the total.
+  // Off by default — set HARNESS_TIMING=1 to bring it back when investigating.
+  const timing = process.env.HARNESS_TIMING === '1';
+  const t0 = Date.now();
+  const lap = (stage: string, since: number) => {
+    if (timing) console.log(`[harness] ${stage} ${Date.now() - since}ms`);
+  };
+
   // 1. Route.
   const decision = await route(ai, question);
+  lap('route', t0);
   if (decision.needsClarification) {
     onToken(decision.needsClarification);
     return;
@@ -97,14 +124,18 @@ export async function runHarness(
 
   // 2. Ground (merge router units with a regex pass so we never miss an explicit unit).
   const units = [...new Set([...decision.units, ...extractUnits(question)])];
-  const grounding = await fetchGrounding(decision.specialists, units, date);
+  const tGround = Date.now();
+  const grounding = await fetchGrounding(decision.specialists, units, date, question);
+  lap('grounding', tGround);
 
   // 3. Specialists reason in parallel, each over ONLY its grounding.
+  const tSpec = Date.now();
   const findings = await Promise.all(
     decision.specialists
       .filter((id) => grounding.data[id] !== undefined)
       .map((id) => runSpecialist(ai, id, grounding.data[id])),
   );
+  lap(`specialists(${decision.specialists.join(',')})`, tSpec);
 
   // 4. Coordinator composes one grounded answer, streamed.
   const findingsBlock =
@@ -123,8 +154,15 @@ export async function runHarness(
     config: { systemInstruction: COMPOSER_SYSTEM, temperature: 0.3 },
   });
 
+  const tCompose = Date.now();
+  let firstToken = 0;
   for await (const chunk of stream) {
     const t = chunk.text;
-    if (t) onToken(t);
+    if (t) {
+      if (!firstToken) { firstToken = Date.now(); lap('compose-first-token', tCompose); }
+      onToken(t);
+    }
   }
+  lap('compose-total', tCompose);
+  lap('TOTAL', t0);
 }

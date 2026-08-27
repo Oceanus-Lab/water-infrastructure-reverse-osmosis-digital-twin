@@ -1,0 +1,22 @@
+# Dev + CI dependencies for the suite CI actually runs:
+#   pytest services/source-tracing/tests pipeline/tests services/replay/tests
+#
+# The heavy physics stack (WaterTAP/Pyomo/IDAES) is intentionally NOT here:
+# deviation.py degrades gracefully to the analytical path when it is absent,
+# so tests and CI run without it.
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+pytest>=8.0
+ruff>=0.6
+
+# pipeline/tests/test_load_raw.py imports pipeline.ingest.load_raw, which does
+# `from google.cloud import bigquery, storage` at module level. Without these the import
+# fails and the collection error aborts the entire pytest run, not just that one file.
+google-cloud-bigquery>=3.0
+google-cloud-storage>=2.0
+
+# services/replay/tests/test_harness.py marks both its tests @pytest.mark.asyncio. Without
+# this plugin the marker is unknown and the tests fail as "async def not natively supported",
+# leaving the replay clock's play/pause/advance/jump behaviour unverified.
+pytest-asyncio>=0.23

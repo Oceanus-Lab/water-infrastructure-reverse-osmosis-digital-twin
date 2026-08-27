@@ -1,0 +1,122 @@
+config {
+  type: "table",
+  schema: "ro_forecasts",
+  name: "unit_briefings_bq",
+  tags: ["forecasts", "bqml", "daily"],
+  description: "One-paragraph operator briefing per unit, generated in-SQL with AI.GENERATE. Closes the 'NL summarization happens in BigQuery' half of the architecture principle.",
+  assertions: {
+    uniqueKey: ["unit_id"],
+    nonNull: ["unit_id", "briefing"]
+  }
+}
+
+/*
+ * CLAUDE.md lists NL summarization alongside forecasting and anomaly detection as work that
+ * belongs in BigQuery. It was the one item still outside: the assistant composes prose in a
+ * Next.js route, which the quota wall forced (docs/11-agent-enterprise-quota.md) but which
+ * leaves per-unit briefings — a batch job with no conversational element — running through a
+ * request path they do not need.
+ *
+ * Grounding is assembled in SQL first and passed to the model as facts; the prompt forbids
+ * introducing any number that is not in it. That is the same structural guarantee the
+ * frontend harness relies on (FR-006/FR-008), enforced here by construction rather than by
+ * asking the model nicely: the CTE is the only source of figures the model can see.
+ *
+ * Provenance labels are computed, not generated, so the model cannot mislabel a modeled
+ * figure as measured.
+ */
+
+WITH latest AS (
+  SELECT
+    unit_id,
+    bank_id,
+    MAX(reading_date) AS as_of,
+    COUNT(*) AS readings
+  FROM ${ref("unit_readings")}
+  WHERE unit_n_delta_p IS NOT NULL
+  GROUP BY unit_id, bank_id
+),
+
+current_state AS (
+  SELECT
+    r.unit_id,
+    r.unit_n_delta_p,
+    r.unit_recovery,
+    r.percent_ec_removal,
+    r.temp_c
+  FROM ${ref("unit_readings")} r
+  JOIN latest l ON r.unit_id = l.unit_id AND r.reading_date = l.as_of
+),
+
+projection AS (
+  SELECT
+    unit_id,
+    MIN(ndp_forecast) AS ndp_day1,
+    MAX(ndp_forecast) AS ndp_day10,
+    ROUND(MAX(ndp_forecast) - MIN(ndp_forecast), 3) AS projected_rise_10d,
+    ROUND(AVG(ndp_upper_90 - ndp_lower_90), 2) AS avg_interval_width
+  FROM ${ref("fouling_forecast_bq")}
+  GROUP BY unit_id
+),
+
+anomaly_count AS (
+  SELECT unit_id, COUNT(*) AS anomalies_90d
+  FROM ${ref("fouling_anomalies_bq")}
+  GROUP BY unit_id
+),
+
+facts AS (
+  SELECT
+    l.unit_id,
+    l.bank_id,
+    l.as_of,
+    -- Constitution IV: banks F-G have metered energy, A-E are WaterTAP-modeled.
+    IF(STARTS_WITH(l.unit_id, 'F') OR STARTS_WITH(l.unit_id, 'G'), 'measured', 'modeled') AS provenance,
+    ROUND(c.unit_n_delta_p, 2) AS ndp_now,
+    ROUND(c.unit_recovery * 100, 1) AS recovery_pct,
+    ROUND((1 - c.percent_ec_removal) * 100, 3) AS salt_passage_pct,
+    ROUND(c.temp_c, 1) AS temp_c,
+    p.projected_rise_10d,
+    p.avg_interval_width,
+    IFNULL(a.anomalies_90d, 0) AS anomalies_90d
+  FROM latest l
+  JOIN current_state c USING (unit_id)
+  LEFT JOIN projection p USING (unit_id)
+  LEFT JOIN anomaly_count a USING (unit_id)
+)
+
+SELECT
+  unit_id,
+  bank_id,
+  as_of,
+  provenance,
+  ndp_now,
+  projected_rise_10d,
+  anomalies_90d,
+  AI.GENERATE(
+    prompt => (
+      'You are briefing a reverse-osmosis plant operator about unit ' || unit_id || '. '
+      || 'Write ONE short paragraph (max 50 words) in plain language.\n\n'
+      || 'RULES:\n'
+      || '- Use ONLY the figures below. Never introduce a number that is not listed.\n'
+      || '- Refer to the unit as "' || unit_id || '" or as "this unit". NEVER invent an '
+      || 'identifier, serial or tag of any kind. An earlier revision told the model not to '
+      || 'repeat the id and it responded by inventing ones like "Unit #242" and "Unit R-15".\n'
+      || '- Say what the operator should watch, not what they should do — this is advise-only.\n'
+      || '- If the projected rise is under 0.3 psi, say the unit is stable.\n'
+      || '- Start with the finding, not a heading or the word "Unit".\n\n'
+      || 'FACTS (' || provenance || ' energy provenance, as of ' || CAST(as_of AS STRING) || '):\n'
+      || '- normalized differential pressure now: ' || CAST(ndp_now AS STRING) || ' psi\n'
+      || '- projected rise over next 10 days: ' || CAST(IFNULL(projected_rise_10d, 0) AS STRING) || ' psi\n'
+      || '- forecast interval width: ' || CAST(IFNULL(avg_interval_width, 0) AS STRING) || ' psi\n'
+      || '- recovery: ' || CAST(recovery_pct AS STRING) || ' %\n'
+      || '- salt passage: ' || CAST(salt_passage_pct AS STRING) || ' %\n'
+      || '- feed temperature: ' || CAST(temp_c AS STRING) || ' C\n'
+      || '- anomalies flagged in the last 90 points: ' || CAST(anomalies_90d AS STRING)
+    ),
+    connection_id => 'us-central1.vertex-ai',
+    endpoint => 'gemini-2.5-flash'
+  ).result AS briefing,
+  'AI.GENERATE (Gemini)' AS method,
+  CURRENT_TIMESTAMP() AS generated_at
+FROM facts

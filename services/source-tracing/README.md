@@ -51,13 +51,19 @@ Production compute path per `AGENTS.md`: BigQuery in-SQL AI (`AI.FORECAST`, `AI.
 
 ## Known limitations (prototype, honest)
 
-- **003 output is not yet the shared bus.** `deviation.py` writes `deviations.csv`, but 004–006
-  currently recompute their own per-cycle clean anchor from `readings.csv` rather than consuming
-  it. Next step: make 004–006 read `deviations.csv` so the WaterTAP high-fidelity baseline
-  propagates through the whole chain (single source of truth).
-- **Clean-baseline definitions differ across modules** (003 = first 10 days of a cycle; 004/006 =
-  first 5 readings; 005 backtest = 10th-percentile of the pre-CIP window). They should be unified
-  into one shared helper so every "ΔP rise" number reconciles for an operator cross-checking them.
+- **The clean baseline is now one definition** — `common.clean_anchor` (mean over the first
+  `CLEAN_DAYS` of a cycle). 003 re-exports it and 004/006 consume `common.add_deviation`'s
+  output directly instead of re-deriving an anchor from the first 5 readings. 003's
+  `deviations.csv`, 004's `current_rise` and 006's `dp_rise_psi` agree on all 92 cycles to
+  within rounding, so the numbers reconcile for an operator cross-checking them.
+- **003's `deviations.csv` is still not the literal input to 004–006.** They recompute the
+  same deviation via the shared helper rather than reading the file, so the WaterTAP
+  high-fidelity baseline does not yet propagate down the chain. That remains the next step.
+- **Time is measured from `reading_date`, not `days_since_replacement`.** The latter counts
+  from the last membrane *replacement* and resets mid-cycle when one is swapped (C01#4,
+  D01#4). Use `common.cycle_days` for any per-cycle time axis.
 - **Lead-time is threshold/anchor-dependent.** The 005 catch-rate and lead time move with
   `WARN_RISE` and the anchor choice; they are reported as measured-from-history, not as tuned
-  targets. False-positive rate is not yet measured.
+  targets.
+- **`baseline_error` is leave-one-out**, so it is a held-out number rather than the clean
+  window's own spread. It is larger than the previous in-sample figure by construction.

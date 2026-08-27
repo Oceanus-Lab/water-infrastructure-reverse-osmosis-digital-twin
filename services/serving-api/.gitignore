@@ -1,4 +1,5 @@
-# Bundled deploy-time snapshot of ../source-tracing/data — regenerate, don't commit.
+# Deploy-time snapshots of ../source-tracing — staged by deploy.sh, never committed.
 data/
+_lib/
 __pycache__/
 *.pyc

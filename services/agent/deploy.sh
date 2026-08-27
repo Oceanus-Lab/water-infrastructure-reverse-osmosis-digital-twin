@@ -2,8 +2,10 @@
 # Deploy RO Diagnostic Assistant using Gemini Enterprise Agent Platform Managed Agents API
 # Implements T056 [US9]
 
-export PROJECT_ID="spatial-cat-489006-a4"
-export LOCATION="us-central1"
+export PROJECT_ID="${PROJECT_ID:-${GOOGLE_CLOUD_PROJECT:-spatial-cat-489006-a4}}"
+export LOCATION="${LOCATION:-us-central1}"
+# Skills staging bucket — defaults to <project>-agent-staging, override for a different layout.
+export AGENT_STAGING_BUCKET="${AGENT_STAGING_BUCKET:-${PROJECT_ID}-agent-staging}"
 export ACCESS_TOKEN=$(gcloud auth print-access-token)
 
 echo "Deploying custom agent to Agent Platform Control Plane..."
@@ -24,7 +26,7 @@ curl -X POST "https://aiplatform.googleapis.com/v1beta1/projects/${PROJECT_ID}/l
       "sources": [
         {
           "type": "gcs",
-          "source": "gs://spatial-cat-489006-a4-agent-staging/skills",
+          "source": "gs://'"${AGENT_STAGING_BUCKET}"'/skills",
           "target": "/.agent/skills"
         }
       ],

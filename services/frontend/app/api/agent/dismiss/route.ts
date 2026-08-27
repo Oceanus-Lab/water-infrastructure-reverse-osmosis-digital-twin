@@ -1,37 +1,31 @@
-import { GoogleGenAI } from '@google/genai';
 import { NextRequest } from 'next/server';
 
-const ai = new GoogleGenAI({
-  enterprise: true,
-  project: process.env.GOOGLE_CLOUD_PROJECT || 'spatial-cat-489006-a4',
-  location: process.env.GOOGLE_CLOUD_LOCATION || 'global',
-});
-
-const AGENT_NAME = process.env.RO_ASSISTANT_AGENT_NAME || 'projects/spatial-cat-489006-a4/locations/global/agents/ro-assistant';
-
+/**
+ * The operator tapped Dismiss — no record is written.
+ *
+ * This used to call the Agent Platform interactions API with a "[SYSTEM OVERRIDE]" prompt
+ * telling the agent NOT to invoke record_decision. That inverts the gate: it makes not-writing
+ * depend on the model obeying an instruction, when the correct implementation of "do not
+ * write" is to not write. It also hit the quota-blocked endpoint, so Dismiss returned 500.
+ *
+ * Nothing is written here, and nothing needs to be. Writing only ever happens in the approve
+ * route, which calls recordDecision with approved=true.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const { proposal, previousInteractionId } = await req.json();
-
+    const { proposal } = await req.json();
     if (!proposal) {
-      return new Response(JSON.stringify({ error: 'Missing proposal' }), { status: 400 });
+      return Response.json({ error: 'Missing proposal' }, { status: 400 });
     }
-
-    // Call the Agent Runtime to inform the agent that the proposal was dismissed
-    const interaction = await ai.interactions.create({
-      agent: AGENT_NAME,
-      input: `[SYSTEM OVERRIDE]: The operator has explicitly DISMISSED the proposal ID: ${proposal.proposal_id || 'unknown'}. Do NOT execute the record_decision tool. Acknowledge the dismissal to the user.`,
-      store: true,
-      ...(previousInteractionId && { previousInteractionId }),
+    return Response.json({
+      success: true,
+      status: 'dismissed',
+      proposal_id: proposal.proposal_id ?? null,
+      written: false,
     });
-
-    return new Response(JSON.stringify({ success: true, response: interaction }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-  } catch (error: any) {
-    console.error("Agent interactions API error (dismiss):", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  } catch (error) {
+    console.error('dismiss route error:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: message }, { status: 500 });
   }
 }

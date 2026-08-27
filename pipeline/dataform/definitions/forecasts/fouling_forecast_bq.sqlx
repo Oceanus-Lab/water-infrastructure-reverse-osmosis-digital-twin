@@ -1,0 +1,56 @@
+config {
+  type: "table",
+  schema: "ro_forecasts",
+  name: "fouling_forecast_bq",
+  tags: ["forecasts", "bqml", "daily"],
+  description: "10-day normalized-ΔP projection per unit from AI.FORECAST (TimesFM). The architecture-principle path: forecasting happens in BigQuery, in-place, not in a custom ML pipeline.",
+  assertions: {
+    uniqueKey: ["unit_id", "forecast_date"],
+    nonNull: ["unit_id", "forecast_date", "ndp_forecast"]
+  }
+}
+
+/*
+ * Spec 004, BigQuery-native. CLAUDE.md states the principle plainly: "BigQuery is both
+ * storage AND the primary AI compute layer — forecasting/anomaly detection ... happen in-SQL".
+ *
+ * services/source-tracing/forecast_bq.sql held the queries that satisfy that, described as
+ * "the production path", but it was a standalone file: hardcoded to unit D02, hardcoded to
+ * one project, writing to nothing, and called by nobody. The only forecast anything actually
+ * consumed came from a linear regression in forecast_anomaly.py. This makes the SQL a real
+ * pipeline action — all 21 units via id_cols, materialised where the serving layer can read it.
+ *
+ * It does NOT replace forecast_anomaly.py. That module answers "what did we know on date X"
+ * for the replay scrubber, which needs a fit recomputed as of every date; TimesFM projects
+ * forward from the end of the series, so one AI.FORECAST call cannot answer it. Both are
+ * kept, with distinct jobs: this is the forward projection an operator acts on today, the
+ * Python module is the as-of-date backtest.
+ */
+
+SELECT
+  unit_id,
+  DATE(forecast_timestamp)                                    AS forecast_date,
+  ROUND(forecast_value, 3)                                    AS ndp_forecast,
+  ROUND(prediction_interval_lower_bound, 3)                   AS ndp_lower_90,
+  ROUND(prediction_interval_upper_bound, 3)                   AS ndp_upper_90,
+  ROUND(prediction_interval_upper_bound
+        - prediction_interval_lower_bound, 3)                 AS interval_width,
+  'AI.FORECAST (TimesFM)'                                     AS method,
+  'unit_n_delta_p'                                            AS signal,
+  -- Provenance rule (Constitution IV): banks F-G have metered energy, A-E are modeled.
+  IF(STARTS_WITH(unit_id, 'F') OR STARTS_WITH(unit_id, 'G'), 'measured', 'modeled') AS provenance,
+  CURRENT_TIMESTAMP()                                         AS generated_at
+FROM
+  AI.FORECAST(
+    (
+      SELECT unit_id, TIMESTAMP(reading_date) AS ts, unit_n_delta_p AS y
+      FROM ${ref("unit_readings")}
+      WHERE unit_n_delta_p IS NOT NULL
+    ),
+    data_col        => 'y',
+    timestamp_col   => 'ts',
+    -- One call covers the whole fleet; without id_cols this would need 21 separate queries.
+    id_cols         => ['unit_id'],
+    horizon         => 10,
+    confidence_level => 0.9
+  )
