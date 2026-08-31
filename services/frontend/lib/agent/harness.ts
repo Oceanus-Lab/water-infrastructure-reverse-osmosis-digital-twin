@@ -43,21 +43,48 @@ function fastRoute(question: string): RouterDecision | null {
   const q = question.toLowerCase();
   const units = extractUnits(question);
 
-  if (q.includes('clean now or wait') || q.includes('should i clean') || q.includes('when to clean')) {
+  // 1. Decision & Unit Diagnostic Queries: cross-functional review (Data + Simulation + Economics)
+  if (
+    q.includes('clean now or wait') ||
+    q.includes('should i clean') ||
+    q.includes('when to clean') ||
+    (units.length > 0 && (q.includes('analyze') || q.includes('status') || q.includes('inspect') || q.includes('health') || q.includes('what about')))
+  ) {
     return { specialists: ['dataAnalyst', 'simulation', 'economics'], units };
   }
-  if (q.includes('fouling fastest') || q.includes('fouling rate') || q.includes('delta p') || q.includes('pressure drop')) {
+
+  // 2. Fouling Rate & Delta P Trends
+  if (q.includes('fouling fastest') || q.includes('fouling rate') || q.includes('delta p') || q.includes('pressure drop') || q.includes('anomaly')) {
     return { specialists: ['dataAnalyst', 'simulation'], units };
   }
+
+  // 3. Energy Economics & Penalties
   if (q.includes('energy cost') || q.includes('tariff') || q.includes('cost model') || q.includes('electricity rate') || q.includes('driving this week')) {
     return { specialists: ['economics', 'dataAnalyst'], units };
   }
-  if (q.includes('sop') || q.includes('protocol') || q.includes('wash') || q.includes('citric') || q.includes('caustic') || q.includes('silica') || q.includes('membrane cleaning')) {
+
+  // 4. Standard Operating Procedures & Scaling RAG
+  if (
+    q.includes('sop') ||
+    q.includes('protocol') ||
+    q.includes('wash') ||
+    q.includes('citric') ||
+    q.includes('caustic') ||
+    q.includes('silica') ||
+    q.includes('scaling') ||
+    q.includes('membrane cleaning') ||
+    q.includes('procedure') ||
+    q.includes('permit') ||
+    q.includes('compliance')
+  ) {
     return { specialists: ['document'], units };
   }
+
+  // 5. WaterTAP What-If Simulation
   if (q.includes('simulate') || q.includes('what if') || q.includes('recovery rate') || q.includes('watertap')) {
     return { specialists: ['simulation'], units };
   }
+
   return null;
 }
 

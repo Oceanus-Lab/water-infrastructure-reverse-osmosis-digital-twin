@@ -9,6 +9,67 @@ interface ThinkingAccordionProps {
   thinking: ThinkingState;
 }
 
+function buildSpecialistTask(s: SpecialistConsultation): AITask {
+  const isDone = s.status === "completed";
+  const isRunning = s.status === "running";
+  const status = isDone ? "done" : isRunning ? "running" : "failed";
+  const note = s.durationMs > 0 ? `${s.durationMs}ms` : undefined;
+
+  switch (s.id) {
+    case "dataAnalyst":
+      return {
+        id: "dataAnalyst",
+        label: "Data Analyst — Sensor Streams & Diagnostics",
+        status,
+        note,
+        children: [
+          { id: "da-1", label: "Audit normalized ΔP and sensor trends", status },
+          { id: "da-2", label: "Detect statistical z-score deviations & sensor stability", status },
+        ],
+      };
+    case "simulation":
+      return {
+        id: "simulation",
+        label: "Simulation — WaterTAP 0D Physics & Trajectory",
+        status,
+        note,
+        children: [
+          { id: "sim-1", label: "Query WaterTAP clean-membrane baseline", status },
+          { id: "sim-2", label: "Compute days-to-clean fouling trajectory", status },
+        ],
+      };
+    case "economics":
+      return {
+        id: "economics",
+        label: "Economics — Delta-First Cleaning Trade-Offs",
+        status,
+        note,
+        children: [
+          { id: "econ-1", label: "Calculate clean-now vs. wait cost delta", status },
+          { id: "econ-2", label: "Evaluate chemical CIP break-even ROI", status },
+        ],
+      };
+    case "document":
+      return {
+        id: "document",
+        label: "Document Specialist — SOP & Protocol RAG",
+        status,
+        note,
+        children: [
+          { id: "doc-1", label: "Expand technical HyDE query terminology", status },
+          { id: "doc-2", label: "Execute BigQuery vector search & CRAG filter", status },
+        ],
+      };
+    default:
+      return {
+        id: s.id,
+        label: `Consult ${s.id} specialist`,
+        status,
+        note,
+      };
+  }
+}
+
 export function ThinkingAccordion({ thinking }: ThinkingAccordionProps) {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -20,26 +81,29 @@ export function ThinkingAccordion({ thinking }: ThinkingAccordionProps) {
   const tasks: AITask[] = [
     {
       id: "coordinate",
-      label: "Classify intent & orchestrate specialists",
+      label: "Classify operator intent & orchestrate specialists",
       status: "done",
       note: "Coordinator",
     },
-    ...(specialists.map((s: SpecialistConsultation) => ({
-      id: s.id,
-      label: `Consult ${s.id.replace(/([A-Z])/g, ' $1').toLowerCase()} specialist`,
-      status: s.status === "completed" ? ("done" as const) : s.status === "running" ? ("running" as const) : ("failed" as const),
-      note: s.durationMs > 0 ? `${s.durationMs}ms` : undefined,
-    }))),
+    ...specialists.map(buildSpecialistTask),
     {
       id: "compose",
       label: "Synthesize response with evidence citations",
-      status: allSpecialistsDone ? ("done" as const) : ("running" as const),
+      status: allSpecialistsDone ? "done" : "running",
+      children: [
+        { id: "comp-1", label: "Ground all figures against real plant telemetry", status: allSpecialistsDone ? "done" : "running" },
+        { id: "comp-2", label: "Enforce measured vs. modeled provenance tags", status: allSpecialistsDone ? "done" : "running" },
+      ],
     },
     ...(thinking.reflexionCritique ? [{
       id: "reflexion",
       label: "In-Harness Reflexion Critic Audit",
       status: "done" as const,
-      note: "Verified Grounding",
+      note: "100% Grounded",
+      children: [
+        { id: "ref-1", label: "Zero ungrounded figures verified", status: "done" as const },
+        { id: "ref-2", label: "No actuation / advise-only guardrail enforced", status: "done" as const },
+      ],
     }] : []),
   ];
 

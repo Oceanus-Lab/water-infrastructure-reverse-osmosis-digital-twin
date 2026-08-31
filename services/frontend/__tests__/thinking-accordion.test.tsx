@@ -15,9 +15,9 @@ describe('ThinkingAccordion', () => {
 
     render(<ThinkingAccordion thinking={thinking} />);
     expect(screen.getByText('Evaluating Unit B03 degradation')).toBeDefined();
-    expect(screen.getByText(/Consult data analyst specialist/i)).toBeDefined();
+    expect(screen.getByText(/Data Analyst — Sensor Streams/i)).toBeDefined();
     expect(screen.getByText('420ms')).toBeDefined();
-    expect(screen.getByText(/Consult simulation specialist/i)).toBeDefined();
+    expect(screen.getByText(/Simulation — WaterTAP 0D Physics/i)).toBeDefined();
     expect(screen.getByText('650ms')).toBeDefined();
     expect(screen.getByText(/Verified no ungrounded numbers/)).toBeDefined();
   });
