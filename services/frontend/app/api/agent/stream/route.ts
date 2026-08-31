@@ -103,6 +103,12 @@ async function lookupCache(embedding: number[]): Promise<unknown[] | null> {
   }
 }
 
+interface StreamCacheEntry {
+  chunks: unknown[];
+  expiresAt: number;
+}
+const IN_MEMORY_STREAM_CACHE = new Map<string, StreamCacheEntry>();
+
 export async function POST(req: NextRequest) {
   try {
     const { input, date, previousInteractionId } = await req.json();
@@ -115,16 +121,26 @@ export async function POST(req: NextRequest) {
       return streamStaticChunks([messageChunk(GREETING_MESSAGE, `greeting-${Date.now()}`)]);
     }
 
+    // 1. In-memory fast cache lookup (0ms latency, bypasses BigQuery and Embedding calls)
+    const normalizedKey = input.trim().toLowerCase().replace(/[^\w\s]/g, '');
+    const memCached = IN_MEMORY_STREAM_CACHE.get(normalizedKey);
+    if (memCached && memCached.expiresAt > Date.now()) {
+      return streamStaticChunks(memCached.chunks);
+    }
+
     const isTimeSensitive = TIME_SENSITIVE_REGEX.test(input);
     const embedding = await embedQuestion(input);
 
-    // 1. For non-time-sensitive questions, serve an instant cache hit (seeded demo answers).
+    // 2. For non-time-sensitive questions, serve an instant cache hit (seeded demo answers).
     if (!isTimeSensitive && embedding) {
       const cached = await lookupCache(embedding);
-      if (cached) return streamStaticChunks(cached);
+      if (cached) {
+        IN_MEMORY_STREAM_CACHE.set(normalizedKey, { chunks: cached, expiresAt: Date.now() + 600_000 });
+        return streamStaticChunks(cached);
+      }
     }
 
-    // 2. Otherwise run the in-route multi-agent harness (Coordinator → specialists → composer),
+    // 3. Otherwise run the in-route multi-agent harness (Coordinator → specialists → composer),
     //    grounded in the serving-api. On failure, fall back to the cache, then an honest message.
     const answerId = `harness-${Date.now()}`;
     const traceId = `trace-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -207,16 +223,24 @@ export async function POST(req: NextRequest) {
         }
 
         // Cache write-back for non-time-sensitive answers, so repeats are instant.
-        if (!isTimeSensitive && embedding && emitted > 0 && full.trim()) {
-          const answerJson = JSON.stringify([messageChunk(full, answerId)]);
-          bq.query({
-            query: `
-              INSERT INTO \`${QA_CACHE}\`
-              (question_embedding, question_text, answer_json, cached_at, is_time_sensitive)
-              VALUES (@embedding, @text, PARSE_JSON(@answer), CURRENT_TIMESTAMP(), FALSE)
-            `,
-            params: { embedding, text: input, answer: answerJson },
-          }).catch((e) => console.error('Cache write error:', e.message));
+        if (emitted > 0 && full.trim()) {
+          const answerChunks = [messageChunk(full, answerId)];
+          IN_MEMORY_STREAM_CACHE.set(normalizedKey, {
+            chunks: answerChunks,
+            expiresAt: Date.now() + 600_000,
+          });
+
+          if (!isTimeSensitive && embedding) {
+            const answerJson = JSON.stringify(answerChunks);
+            bq.query({
+              query: `
+                INSERT INTO \`${QA_CACHE}\`
+                (question_embedding, question_text, answer_json, cached_at, is_time_sensitive)
+                VALUES (@embedding, @text, PARSE_JSON(@answer), CURRENT_TIMESTAMP(), FALSE)
+              `,
+              params: { embedding, text: input, answer: answerJson },
+            }).catch((e) => console.error('Cache write error:', e.message));
+          }
         }
       },
     });

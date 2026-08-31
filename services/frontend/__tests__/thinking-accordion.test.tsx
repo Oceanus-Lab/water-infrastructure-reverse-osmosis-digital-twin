@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { ThinkingAccordion } from '@/components/assistant/thinking-accordion';
 
 describe('ThinkingAccordion', () => {
-  it('renders specialist consultation list and durations', () => {
+  it('renders specialist consultation list and durations via AITaskList', () => {
     const thinking = {
       summary: 'Evaluating Unit B03 degradation',
       specialistsConsulted: [
@@ -15,9 +15,9 @@ describe('ThinkingAccordion', () => {
 
     render(<ThinkingAccordion thinking={thinking} />);
     expect(screen.getByText('Evaluating Unit B03 degradation')).toBeDefined();
-    expect(screen.getByText('dataAnalyst')).toBeDefined();
+    expect(screen.getByText(/Consult data analyst specialist/i)).toBeDefined();
     expect(screen.getByText('420ms')).toBeDefined();
-    expect(screen.getByText('simulation')).toBeDefined();
+    expect(screen.getByText(/Consult simulation specialist/i)).toBeDefined();
     expect(screen.getByText('650ms')).toBeDefined();
     expect(screen.getByText(/Verified no ungrounded numbers/)).toBeDefined();
   });

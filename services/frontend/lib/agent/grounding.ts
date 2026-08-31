@@ -76,14 +76,29 @@ const REQUIRED_TIMEOUT_MS = 30_000;
  */
 const OPTIONAL_TIMEOUT_MS = 3_000;
 
+interface MemoEntry {
+  data: unknown;
+  expiresAt: number;
+}
+const MEMO_CACHE = new Map<string, MemoEntry>();
+
 async function getJson(path: string, timeoutMs = REQUIRED_TIMEOUT_MS): Promise<unknown | null> {
+  const url = `${API_BASE}${path}`;
+  const now = Date.now();
+  const cached = MEMO_CACHE.get(url);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(url, {
       cache: 'no-store',
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return null;
-    return await res.json();
+    const json = await res.json();
+    MEMO_CACHE.set(url, { data: json, expiresAt: now + 60_000 });
+    return json;
   } catch {
     return null;
   }

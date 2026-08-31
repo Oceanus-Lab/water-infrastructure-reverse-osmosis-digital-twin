@@ -39,7 +39,33 @@ interface RouterDecision {
   needsClarification?: string | null;
 }
 
+function fastRoute(question: string): RouterDecision | null {
+  const q = question.toLowerCase();
+  const units = extractUnits(question);
+
+  if (q.includes('clean now or wait') || q.includes('should i clean') || q.includes('when to clean')) {
+    return { specialists: ['dataAnalyst', 'simulation', 'economics'], units };
+  }
+  if (q.includes('fouling fastest') || q.includes('fouling rate') || q.includes('delta p') || q.includes('pressure drop')) {
+    return { specialists: ['dataAnalyst', 'simulation'], units };
+  }
+  if (q.includes('energy cost') || q.includes('tariff') || q.includes('cost model') || q.includes('electricity rate') || q.includes('driving this week')) {
+    return { specialists: ['economics', 'dataAnalyst'], units };
+  }
+  if (q.includes('sop') || q.includes('protocol') || q.includes('wash') || q.includes('citric') || q.includes('caustic') || q.includes('silica') || q.includes('membrane cleaning')) {
+    return { specialists: ['document'], units };
+  }
+  if (q.includes('simulate') || q.includes('what if') || q.includes('recovery rate') || q.includes('watertap')) {
+    return { specialists: ['simulation'], units };
+  }
+  return null;
+}
+
 async function route(ai: GoogleGenAI, question: string): Promise<RouterDecision> {
+  // Fast-path heuristic routing: executes in 0ms without consuming Gemini tokens or latency
+  const fast = fastRoute(question);
+  if (fast) return fast;
+
   const res = await ai.models.generateContent({
     model: MODEL,
     contents: question,
