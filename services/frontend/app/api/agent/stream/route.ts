@@ -127,10 +127,19 @@ export async function POST(req: NextRequest) {
     // 2. Otherwise run the in-route multi-agent harness (Coordinator → specialists → composer),
     //    grounded in the serving-api. On failure, fall back to the cache, then an honest message.
     const answerId = `harness-${Date.now()}`;
+    const traceId = `trace-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const TRACES_TABLE = `${PROJECT}.ro_serving.agent_traces`;
+    const t0 = Date.now();
+
     const stream = new ReadableStream({
       async start(controller) {
         let emitted = 0;
         let full = '';
+        let reflexionResult: any = null;
+
+        // Immediate heartbeat to ensure connection stays open and avoids 504 timeouts
+        controller.enqueue(encodeSse({ id: answerId, type: 'heartbeat', status: 'connected' }));
+
         try {
           await runHarness(
             ai,
@@ -141,6 +150,13 @@ export async function POST(req: NextRequest) {
               controller.enqueue(encodeSse(messageChunk(t, answerId)));
             },
             typeof date === 'string' ? date : undefined,
+            (event) => {
+              if (event.type === 'reflexion') {
+                reflexionResult = event.payload;
+              }
+              // Pass structured thinking events to client
+              controller.enqueue(encodeSse({ id: answerId, ...event }));
+            }
           );
         } catch (err) {
           console.error('Harness failed:', err);
@@ -158,6 +174,38 @@ export async function POST(req: NextRequest) {
         }
         controller.close();
 
+        const latencyMs = Date.now() - t0;
+
+        // Non-blocking telemetry trace logging to BigQuery ro_serving.agent_traces (T013)
+        if (emitted > 0 && full.trim()) {
+          bq.query({
+            query: `
+              INSERT INTO \`${TRACES_TABLE}\`
+              (trace_id, session_id, created_at, user_query, draft_response, reflexion_critique, final_response, latency_ms, grounding_score)
+              VALUES (
+                @traceId,
+                @sessionId,
+                CURRENT_TIMESTAMP(),
+                @userQuery,
+                @finalResponse,
+                @reflexionCritique,
+                @finalResponse,
+                @latencyMs,
+                @groundingScore
+              )
+            `,
+            params: {
+              traceId,
+              sessionId: typeof previousInteractionId === 'string' ? previousInteractionId : answerId,
+              userQuery: input,
+              finalResponse: full,
+              reflexionCritique: reflexionResult?.critique ?? null,
+              latencyMs,
+              groundingScore: reflexionResult?.isGrounded ? 1.0 : 0.0,
+            },
+          }).catch((e) => console.error('Trace logging non-blocking error:', e.message));
+        }
+
         // Cache write-back for non-time-sensitive answers, so repeats are instant.
         if (!isTimeSensitive && embedding && emitted > 0 && full.trim()) {
           const answerJson = JSON.stringify([messageChunk(full, answerId)]);
@@ -168,7 +216,7 @@ export async function POST(req: NextRequest) {
               VALUES (@embedding, @text, PARSE_JSON(@answer), CURRENT_TIMESTAMP(), FALSE)
             `,
             params: { embedding, text: input, answer: answerJson },
-          }).catch((e) => console.error('Cache write error:', e));
+          }).catch((e) => console.error('Cache write error:', e.message));
         }
       },
     });

@@ -1,32 +1,44 @@
-import { NextRequest } from 'next/server';
-import { GovernanceError, recordDecision } from '@/lib/agent/decisions';
+import { NextRequest } from "next/server";
+import { recordDecision, GovernanceError, type Proposal } from "@/lib/agent/decisions";
 
-/**
- * The operator tapped Approve — write the decision.
- *
- * This used to ask the Agent Platform interactions API to call record_decision on our behalf
- * with a "[SYSTEM OVERRIDE]" prompt. That endpoint is the one the preview-tier quota blocks
- * (docs/11-agent-enterprise-quota.md), so Approve returned 500 and decision_log stayed empty;
- * and a governance gate implemented as a natural-language instruction is only as strong as
- * the model's willingness to comply. lib/agent/decisions.ts writes directly, with approval
- * established here rather than asserted in a prompt.
- */
 export async function POST(req: NextRequest) {
   try {
-    const { proposal } = await req.json();
-    if (!proposal) {
-      return Response.json({ error: 'Missing proposal' }, { status: 400 });
-    }
+    const body = await req.json();
 
-    const written = await recordDecision(proposal, true);
-    return Response.json({ success: true, status: 'approved', ...written });
-  } catch (error) {
-    if (error instanceof GovernanceError) {
-      // 422, not 500: the request was understood and refused on policy.
-      return Response.json({ error: error.message, governance: true }, { status: 422 });
+    // Support both direct { proposal: { ... } } and flattened { proposalId, unitId, action, ... }
+    const proposal: Proposal = body.proposal || {
+      proposal_id: body.proposalId,
+      payload: {
+        unit_id: body.unitId,
+        action: body.action,
+        record_type: "decision",
+        assumptions: {
+          cipCost: body.assumedCipCost,
+          electricity: body.assumedElectricity,
+        },
+      },
+    };
+
+    const result = await recordDecision(proposal, true);
+
+    return new Response(
+      JSON.stringify({
+        status: "approved",
+        proposal_id: result.proposal_id,
+        written_at: result.written_at,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (err) {
+    if (err instanceof GovernanceError) {
+      return new Response(
+        JSON.stringify({ error: err.message, governance: true }),
+        { status: 422, headers: { "Content-Type": "application/json" } }
+      );
     }
-    console.error('approve route error:', error);
-    const message = error instanceof Error ? error.message : String(error);
-    return Response.json({ error: message }, { status: 500 });
+    return new Response(
+      JSON.stringify({ error: (err as Error).message || "Internal server error" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 }

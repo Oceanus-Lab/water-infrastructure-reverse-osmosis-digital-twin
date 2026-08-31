@@ -1,0 +1,72 @@
+[
+  {
+    "id": "eval-001",
+    "prompt": "Which unit is fouling fastest?",
+    "expected_specialists": ["dataAnalyst", "simulation"],
+    "reference": "B03 is fouling fastest with a normalized delta P climbing at approximately 0.054 bar/day and exceeding clean baseline by +5.26.",
+    "category": "fouling_rate"
+  },
+  {
+    "id": "eval-002",
+    "prompt": "Clean now or wait on B03?",
+    "expected_specialists": ["dataAnalyst", "simulation", "economics"],
+    "reference": "Clean now. Unit B03 has exceeded its organic fouling action threshold with positive net cleaning ROI.",
+    "category": "cleaning_decision"
+  },
+  {
+    "id": "eval-003",
+    "prompt": "What's driving this week's energy cost?",
+    "expected_specialists": ["economics", "dataAnalyst"],
+    "reference": "Energy costs are driven by Bank F and G specific energy consumption increases and historical electricity rates.",
+    "category": "economics"
+  },
+  {
+    "id": "eval-004",
+    "prompt": "Why is Bank F's energy climbing?",
+    "expected_specialists": ["dataAnalyst", "simulation"],
+    "reference": "Bank F is metered on total kW; elevated feed pressure is compensating for temperature and foulant resistance.",
+    "category": "energy_diagnostics"
+  },
+  {
+    "id": "eval-005",
+    "prompt": "Is Bank A energy metered or modeled?",
+    "expected_specialists": ["dataAnalyst"],
+    "reference": "Bank A energy is WaterTAP-modeled because SCADA energy instrumentation exists only on Banks F and G.",
+    "category": "provenance_check"
+  },
+  {
+    "id": "eval-006",
+    "prompt": "What is the standard CIP protocol for silica scaling?",
+    "expected_specialists": ["document"],
+    "reference": "Citric acid low-pH wash at 2.0 wt% is the standard protocol for silica and inorganic metal hydroxide scaling.",
+    "category": "rag_sop"
+  },
+  {
+    "id": "eval-007",
+    "prompt": "Simulate what happens if Bank A recovery is increased to 85% at 20°C",
+    "expected_specialists": ["simulation"],
+    "reference": "Modeled feed pressure increases to approximately 14.5 bar and SEC increases by +0.08 kWh/m3.",
+    "category": "physics_simulation"
+  },
+  {
+    "id": "eval-008",
+    "prompt": "What are the baseline assumptions for electricity price in the cost model?",
+    "expected_specialists": ["economics"],
+    "reference": "The default electricity rate is assumed at $0.08/kWh with chemical CIP cost at $5,000.",
+    "category": "cost_assumptions"
+  },
+  {
+    "id": "eval-009",
+    "prompt": "What is the health status of Unit E01?",
+    "expected_specialists": ["dataAnalyst"],
+    "reference": "Unit E01 shows moderate particulate fouling trend with approximately 2 days remaining before reaching action threshold.",
+    "category": "unit_health"
+  },
+  {
+    "id": "eval-000",
+    "prompt": "How does temperature affect RO membrane flux?",
+    "expected_specialists": ["document", "simulation"],
+    "reference": "Higher water temperature decreases water viscosity and increases membrane permeability, lowering required feed pressure.",
+    "category": "physics_theory"
+  }
+]

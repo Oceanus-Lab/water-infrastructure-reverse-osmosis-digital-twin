@@ -9,6 +9,8 @@
 import { ThinkingLevel, Type, type GoogleGenAI } from '@google/genai';
 import { ROUTER_SYSTEM, COMPOSER_SYSTEM, SPECIALIST_SYSTEM, type SpecialistId } from './prompts';
 import { extractUnits, fetchGrounding, DEFAULT_DATE } from './grounding';
+import { startSpan } from './tracing';
+import { runReflexionCritic } from './reflexion';
 
 // One model throughout.
 //
@@ -96,8 +98,14 @@ async function runSpecialist(
   return { id, finding: res.text ?? '' };
 }
 
+export interface HarnessEvent {
+  type: 'thinking' | 'specialist' | 'reflexion' | 'token';
+  payload: any;
+}
+
 /**
  * Run the harness for a question, streaming the composed answer token-by-token via `onToken`.
+ * Optionally emits structured lifecycle events via `onEvent`.
  * Throws on model failure so the caller can fall back to cache / honest message.
  */
 export async function runHarness(
@@ -105,39 +113,60 @@ export async function runHarness(
   question: string,
   onToken: (text: string) => void,
   date: string = DEFAULT_DATE,
-): Promise<void> {
-  // Stage timings, so latency can be attributed rather than guessed at from the total.
-  // Off by default — set HARNESS_TIMING=1 to bring it back when investigating.
-  const timing = process.env.HARNESS_TIMING === '1';
+  onEvent?: (event: HarnessEvent) => void,
+): Promise<{ durationMs: number; finalAnswer: string }> {
+  const span = startSpan('harness.execution', { question, date });
   const t0 = Date.now();
-  const lap = (stage: string, since: number) => {
-    if (timing) console.log(`[harness] ${stage} ${Date.now() - since}ms`);
-  };
+
+  onEvent?.({
+    type: 'thinking',
+    payload: { status: 'running', summary: 'Classifying operator intent and routing to plant specialists...' },
+  });
 
   // 1. Route.
+  const routeSpan = startSpan('harness.route');
   const decision = await route(ai, question);
-  lap('route', t0);
+  routeSpan.end({ specialistsCount: decision.specialists.length });
+
   if (decision.needsClarification) {
     onToken(decision.needsClarification);
-    return;
+    span.end({ status: 'needsClarification' });
+    return { durationMs: Date.now() - t0, finalAnswer: decision.needsClarification };
   }
+
+  onEvent?.({
+    type: 'thinking',
+    payload: {
+      status: 'running',
+      summary: `Consulting specialists: ${decision.specialists.join(', ')}...`,
+      specialists: decision.specialists,
+    },
+  });
 
   // 2. Ground (merge router units with a regex pass so we never miss an explicit unit).
   const units = [...new Set([...decision.units, ...extractUnits(question)])];
-  const tGround = Date.now();
+  const groundSpan = startSpan('harness.grounding');
   const grounding = await fetchGrounding(decision.specialists, units, date, question);
-  lap('grounding', tGround);
+  groundSpan.end({ scope: grounding.scope, unitsCount: grounding.units.length });
 
   // 3. Specialists reason in parallel, each over ONLY its grounding.
-  const tSpec = Date.now();
+  const specSpan = startSpan('harness.specialists');
   const findings = await Promise.all(
     decision.specialists
       .filter((id) => grounding.data[id] !== undefined)
-      .map((id) => runSpecialist(ai, id, grounding.data[id])),
+      .map(async (id) => {
+        const specStart = Date.now();
+        const res = await runSpecialist(ai, id, grounding.data[id]);
+        onEvent?.({
+          type: 'specialist',
+          payload: { id, status: 'completed', durationMs: Date.now() - specStart, findingsPreview: res.finding.slice(0, 100) },
+        });
+        return res;
+      }),
   );
-  lap(`specialists(${decision.specialists.join(',')})`, tSpec);
+  specSpan.end({ findingsCount: findings.length });
 
-  // 4. Coordinator composes one grounded answer, streamed.
+  // 4. Coordinator composes one grounded answer.
   const findingsBlock =
     findings.map((f) => `### ${f.id} finding\n${f.finding}`).join('\n\n') ||
     '(no specialist produced a grounded finding)';
@@ -148,21 +177,31 @@ export async function runHarness(
     `as of ${grounding.date} (replay clock).\n\n` +
     `SPECIALIST FINDINGS (the only figures you may state):\n\n${findingsBlock}`;
 
+  const composeSpan = startSpan('harness.compose');
   const stream = await ai.models.generateContentStream({
     model: MODEL,
     contents: composePrompt,
     config: { systemInstruction: COMPOSER_SYSTEM, temperature: 0.3 },
   });
 
-  const tCompose = Date.now();
-  let firstToken = 0;
+  let fullAnswer = '';
   for await (const chunk of stream) {
     const t = chunk.text;
     if (t) {
-      if (!firstToken) { firstToken = Date.now(); lap('compose-first-token', tCompose); }
+      fullAnswer += t;
       onToken(t);
+      onEvent?.({ type: 'token', payload: { text: t } });
     }
   }
-  lap('compose-total', tCompose);
-  lap('TOTAL', t0);
+  composeSpan.end();
+
+  // 5. Reflexion check for verification logging
+  const reflexion = await runReflexionCritic(ai, fullAnswer, grounding.data);
+  onEvent?.({
+    type: 'reflexion',
+    payload: reflexion,
+  });
+
+  const totalDuration = span.end({ isGrounded: reflexion.isGrounded });
+  return { durationMs: totalDuration, finalAnswer: fullAnswer };
 }

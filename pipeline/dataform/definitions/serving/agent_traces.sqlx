@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: "ro_serving",
+  name: "agent_traces",
+  description: "Interaction telemetry and evaluation traces for the multi-agent AI assistant",
+  bigquery: {
+    partitionBy: "DATE(created_at)",
+    clusterBy: ["user_feedback_rating", "session_id"]
+  }
+}
+
+SELECT
+  CAST(NULL AS STRING) AS trace_id,
+  CAST(NULL AS STRING) AS session_id,
+  CAST(NULL AS TIMESTAMP) AS created_at,
+  CAST(NULL AS STRING) AS user_query,
+  CAST(NULL AS JSON) AS router_decision,
+  CAST(NULL AS JSON) AS retrieved_context,
+  CAST(NULL AS STRING) AS draft_response,
+  CAST(NULL AS STRING) AS reflexion_critique,
+  CAST(NULL AS STRING) AS final_response,
+  CAST(NULL AS INT64) AS latency_ms,
+  CAST(NULL AS STRING) AS user_feedback_rating,
+  CAST(NULL AS STRING) AS user_feedback_reason,
+  CAST(NULL AS FLOAT64) AS grounding_score
+WHERE FALSE

@@ -6,6 +6,7 @@
  * the structural guarantee behind the no-hallucinated-numbers gate (FR-006/FR-008).
  */
 import type { SpecialistId } from './prompts';
+import { generateHydeQuery, filterCragPassages, type RawDocumentPassage } from './crag';
 
 // SERVING_API_URL first: this module runs server-side, and NEXT_PUBLIC_API_URL is inlined at
 // build time, so an image built with it still reads `undefined` at runtime unless the same
@@ -169,21 +170,18 @@ export async function fetchGrounding(
   }
 
   if (specialists.includes('document')) {
-    // RAG over ro_embeddings.doc_embeddings, retrieved through the serving-api's
-    // VECTOR_SEARCH endpoint. The corpus is this project's own procedures and design notes
-    // (pipeline/ingest/embed_docs.py) — not manufacturer datasheets — so source_document is
-    // passed through for the specialist to attribute.
-    // Retrieval is an embed + VECTOR_SEARCH round trip (~3 s measured). Given a slightly
-    // wider budget than the physics leg since a procedure question is unanswerable without
-    // it, but still bounded — a stalled BigQuery must not hold the whole answer.
+    // RAG over ro_embeddings.doc_embeddings with HyDE expansion & CRAG filtering.
+    const hydeQuestion = generateHydeQuery(question);
     const hits = (await getJson(
-      `/api/docs/search?q=${encodeURIComponent(question)}&top_k=4`,
+      `/api/docs/search?q=${encodeURIComponent(hydeQuestion)}&top_k=4`,
       8_000,
-    )) as { results?: unknown[] } | null;
+    )) as { results?: RawDocumentPassage[] } | null;
 
-    data.document = hits?.results?.length
-      ? { scope: 'corpus', corpus: 'project procedures and design notes', passages: hits.results }
-      : { note: 'no plant-document corpus is available to this harness' };
+    const validPassages = filterCragPassages(hits?.results ?? [], 0.15);
+
+    data.document = validPassages.length
+      ? { scope: 'corpus', corpus: 'project procedures and design notes', passages: validPassages }
+      : { note: 'no relevant plant-document passages met the CRAG relevance threshold' };
   }
 
   return { scope, units, date, data };
