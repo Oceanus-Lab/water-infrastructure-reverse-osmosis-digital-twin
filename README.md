@@ -171,14 +171,40 @@ specs/              Per-feature spec-kit docs (001–013): spec, plan, tasks, qu
 # Frontend local dev (Next.js 14)
 cd services/frontend && npm install && npm run dev
 
-# Run frontend Vitest test suites (21 test files, 99 tests)
-cd services/frontend && npx vitest run
-
-# Run agent quality evaluation benchmark (50 golden cases)
-python3 services/agent/eval/run_eval.py
-
 # Backend prototype (physics deviation → forecast → fouling validation → economics → assistant)
 cd services/source-tracing && ../../.venv-watertap-spike/bin/python run_all.py
+```
+
+---
+
+## Reproducible Testing
+
+All core capabilities, UI components, physics baselines, and multi-agent governance gates have deterministic, automated test runners:
+
+### **1. Frontend & Visual Component Suites (Vitest)**
+Tests the Next.js visual digital twin, replay timeline scrubber, 21st.dev `AITaskList` reasoning DAG, and human-in-the-loop (HITL) approval cards across **21 test suites (100 tests)**:
+```bash
+cd services/frontend
+npx vitest run
+```
+
+### **2. Agent Quality Eval Flywheel Benchmark (50 Golden Cases)**
+Evaluates the Gemini 3 diagnostic agent across 50 real plant scenarios against the Google Agent Platform criteria (**Groundedness**, **Hallucination Absence**, **Provenance Tagging**, and **Tool Selection Accuracy**):
+```bash
+python3 services/agent/eval/run_eval.py
+```
+
+### **3. Fouling Early-Warning Backtest (71 Real CIP Cycles)**
+Reproduces the 39-day median lead time fouling early-warning metrics against the full 2-year Orange County Water District (OCWD) historical dataset:
+```bash
+python3 research/fouling_backtest.py
+```
+
+### **4. End-to-End Source-Tracing & Physics Pipeline**
+Validates WaterTAP 0D baseline solver deviation, Days Since Cleaning (`dss`) saw-tooth cycle detection, and parametric delta-economics:
+```bash
+cd services/source-tracing
+../../.venv-watertap-spike/bin/python run_all.py
 ```
 
 ---
