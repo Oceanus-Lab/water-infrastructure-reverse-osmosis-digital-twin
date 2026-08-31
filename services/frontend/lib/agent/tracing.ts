@@ -29,7 +29,6 @@ export function startSpan(name: string, initialAttributes: Record<string, string
           'logging.googleapis.com/trace': process.env.GOOGLE_CLOUD_PROJECT,
           span: {
             name,
-            durationMs,
             ...merged,
           },
         }));

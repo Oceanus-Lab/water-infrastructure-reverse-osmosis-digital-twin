@@ -105,7 +105,7 @@ async function lookupCache(embedding: number[]): Promise<unknown[] | null> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { input, date } = await req.json();
+    const { input, date, previousInteractionId } = await req.json();
     if (!input) {
       return new Response(JSON.stringify({ error: 'Missing input text' }), { status: 400 });
     }

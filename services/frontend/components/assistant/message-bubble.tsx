@@ -61,7 +61,7 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
           }`}
         >
           {isModel ? (
-            <AssistantMarkdown content={message.content} />
+            <AssistantMarkdown>{message.content}</AssistantMarkdown>
           ) : (
             <div className="whitespace-pre-wrap">{message.content}</div>
           )}

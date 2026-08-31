@@ -25,6 +25,9 @@ SOURCE_TRACING="$(cd "${HERE}/../source-tracing" && pwd)"
 PROJECT_ID="${PROJECT_ID:-${GOOGLE_CLOUD_PROJECT:-spatial-cat-489006-a4}}"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-ro-serving-api}"
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-https://ro-frontend-903682941870.us-central1.run.app}"
+WATERTAP_API_URL="${WATERTAP_API_URL:-https://watertap-engine-qvj33q6t2a-uc.a.run.app}"
+ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-${FRONTEND_ORIGIN},http://localhost:3000,http://127.0.0.1:3000}"
 
 EXTRA_FLAGS=(--allow-unauthenticated)
 if [[ "${1:-}" == "--" ]]; then
@@ -70,7 +73,7 @@ gcloud run deploy "${SERVICE}" \
   --source="${HERE}" \
   --project="${PROJECT_ID}" \
   --region="${REGION}" \
-  --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT_ID}" \
+  --set-env-vars="^@^GOOGLE_CLOUD_PROJECT=${PROJECT_ID}@ALLOWED_ORIGINS=${ALLOWED_ORIGINS}@WATERTAP_API_URL=${WATERTAP_API_URL}" \
   --min-instances=0 \
   --memory=1Gi \
   --quiet \
