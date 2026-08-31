@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { streamAgentResponse } from '../api/agent';
+import type { ThinkingState, ChatArtifact } from '../agent/types';
 
 export interface SourceTrace {
   figure_text: string;
@@ -24,6 +25,9 @@ export interface Message {
   sourcedFigures?: SourceTrace[];
   proposal?: RecordWritingProposal;
   isStreaming?: boolean;
+  thinking?: ThinkingState;
+  artifacts?: ChatArtifact[];
+  suggestedFollowUps?: string[];
 }
 
 interface AssistantState {
@@ -62,13 +66,20 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
       content: text,
     };
     
-    // Add empty model message placeholder
+    // Add empty model message placeholder with default initial thinking state
     const modelMsgId = uuidv4();
     const modelMsg: Message = {
       id: modelMsgId,
       role: 'model',
       content: '',
       isStreaming: true,
+      thinking: {
+        summary: "Multi-Agent Reasoning & Execution",
+        specialistsConsulted: [
+          { id: 'dataAnalyst', status: 'running', durationMs: 0 },
+        ],
+      },
+      artifacts: [],
     };
     
     set((state) => ({ 
@@ -77,23 +88,55 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
       isOpen: true
     }));
     
-    const { sessionId, messages } = get();
+    const { sessionId } = get();
     
     try {
       const { interactionId } = await streamAgentResponse(
         text,
         sessionId,
         (newText, rawChunk) => {
-          // Update the message content as we stream
           set((state) => {
             const updatedMessages = [...state.messages];
             const msgIndex = updatedMessages.findIndex(m => m.id === modelMsgId);
-            if (msgIndex !== -1) {
-              updatedMessages[msgIndex] = {
-                ...updatedMessages[msgIndex],
-                content: updatedMessages[msgIndex].content + newText
-              };
+            if (msgIndex === -1) return { messages: updatedMessages };
+
+            const current = updatedMessages[msgIndex];
+            let nextThinking = current.thinking ? { ...current.thinking } : { summary: 'Thinking...', specialistsConsulted: [] };
+            let nextArtifacts = current.artifacts ? [...current.artifacts] : [];
+
+            if (rawChunk) {
+              if (rawChunk.type === 'thinking') {
+                nextThinking.summary = rawChunk.payload?.summary || nextThinking.summary;
+                if (Array.isArray(rawChunk.payload?.specialists)) {
+                  nextThinking.specialistsConsulted = rawChunk.payload.specialists.map((id: string) => ({
+                    id,
+                    status: 'running',
+                    durationMs: 0,
+                  }));
+                }
+              } else if (rawChunk.type === 'specialist') {
+                const specs = [...(nextThinking.specialistsConsulted || [])];
+                const specIndex = specs.findIndex(s => s.id === rawChunk.payload.id);
+                if (specIndex !== -1) {
+                  specs[specIndex] = { ...specs[specIndex], ...rawChunk.payload };
+                } else {
+                  specs.push(rawChunk.payload);
+                }
+                nextThinking.specialistsConsulted = specs;
+              } else if (rawChunk.type === 'reflexion') {
+                nextThinking.reflexionCritique = rawChunk.payload?.critique;
+              } else if (rawChunk.type === 'artifact') {
+                nextArtifacts.push(rawChunk.payload);
+              }
             }
+
+            updatedMessages[msgIndex] = {
+              ...current,
+              content: current.content + (newText || ''),
+              thinking: nextThinking,
+              artifacts: nextArtifacts,
+            };
+
             return { messages: updatedMessages };
           });
         }
@@ -104,12 +147,22 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
         const updatedMessages = [...state.messages];
         const msgIndex = updatedMessages.findIndex(m => m.id === modelMsgId);
         
-        // After stream is done, we could theoretically parse out proposal/sourcedFigures 
-        // if they are embedded in the text. For now, just mark stream done.
         if (msgIndex !== -1) {
+          const current = updatedMessages[msgIndex];
+          // Ensure all specialists are marked completed when stream ends
+          const completedSpecs = current.thinking?.specialistsConsulted?.map(s => ({
+            ...s,
+            status: 'completed' as const,
+            durationMs: s.durationMs || 350,
+          })) || [];
+
           updatedMessages[msgIndex] = {
-            ...updatedMessages[msgIndex],
-            isStreaming: false
+            ...current,
+            isStreaming: false,
+            thinking: current.thinking ? {
+              ...current.thinking,
+              specialistsConsulted: completedSpecs,
+            } : undefined,
           };
         }
         
@@ -138,7 +191,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
     }
   },
   
-  updateMessageProposalStatus: (messageId, status) => {
+  updateMessageProposalStatus: (messageId: string, status: 'approved' | 'dismissed') => {
     set((state) => {
       const updatedMessages = [...state.messages];
       const msgIndex = updatedMessages.findIndex(m => m.id === messageId);

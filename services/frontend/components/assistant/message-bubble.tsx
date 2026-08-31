@@ -53,32 +53,34 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
         )}
 
         {/* Message Content Bubble */}
-        <div
-          className={`p-4 rounded-2xl ${
-            isModel
-              ? "bg-muted/40 border border-border/60 text-foreground"
-              : "bg-primary text-primary-foreground ml-auto"
-          }`}
-        >
-          {isModel ? (
-            <AssistantMarkdown>{message.content}</AssistantMarkdown>
-          ) : (
-            <div className="whitespace-pre-wrap">{message.content}</div>
-          )}
+        {(message.content || !isModel) && (
+          <div
+            className={`p-4 rounded-2xl ${
+              isModel
+                ? "bg-muted/40 border border-border/60 text-foreground"
+                : "bg-primary text-primary-foreground ml-auto"
+            }`}
+          >
+            {isModel ? (
+              <AssistantMarkdown>{message.content}</AssistantMarkdown>
+            ) : (
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            )}
 
-          {/* Embedded Artifacts */}
-          {message.artifacts && message.artifacts.length > 0 && (
-            <div className="pt-2 space-y-2">
-              {message.artifacts.map((art: ChatArtifact, i: number) => {
-                if (art.type === "sparkline") return <SparklineWidget key={i} artifact={art} />;
-                if (art.type === "what_if_delta") return <WhatIfWidget key={i} artifact={art} />;
-                if (art.type === "proposal") return <ProposalCard key={i} artifact={art} />;
-                if (art.type === "citation") return <CitationPopover key={i} artifact={art} />;
-                return null;
-              })}
-            </div>
-          )}
-        </div>
+            {/* Embedded Artifacts */}
+            {message.artifacts && message.artifacts.length > 0 && (
+              <div className="pt-2 space-y-2">
+                {message.artifacts.map((art: ChatArtifact, i: number) => {
+                  if (art.type === "sparkline") return <SparklineWidget key={i} artifact={art} />;
+                  if (art.type === "what_if_delta") return <WhatIfWidget key={i} artifact={art} />;
+                  if (art.type === "proposal") return <ProposalCard key={i} artifact={art} />;
+                  if (art.type === "citation") return <CitationPopover key={i} artifact={art} />;
+                  return null;
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Footer Actions (Copy, Thumbs Up/Down) */}
         {isModel && message.status === "completed" && (
