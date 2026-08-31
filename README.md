@@ -8,6 +8,7 @@
 [![Agent - Gemini 3 on Vertex AI](https://img.shields.io/badge/Agent-Gemini%203%20%26%20ADK%202.0-8E75B2?logo=googlegemini)](https://cloud.google.com/vertex-ai)
 [![Infra - Cloud Run](https://img.shields.io/badge/Compute-Cloud%20Run-4285F4?logo=googlecloud)](https://cloud.google.com/run)
 [![UI - Framer Motion](https://img.shields.io/badge/UI-Framer%20Motion%20%26%20Tailwind-06B6D4?logo=framer)](https://framer.com/motion)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/abdullahabtahi/oceanus-digital-twin)
 
 ![Digital Twin UI](public/assets/snapshot1.png)
 
@@ -38,6 +39,8 @@ The dataset is real: **21 membrane units (7 banks × 3 stages)** from the Orange
 ---
 
 ## Architecture
+
+![Google Cloud Solution Architecture](docs/diagrams/oceanus_gcp_architecture.png)
 
 ![Technical Architecture](public/assets/oceanus-architecture.png)
 
@@ -211,4 +214,4 @@ cd services/source-tracing
 
 ## License
 
-Built by Oceanus Lab for the Google Cloud & AI Agents Hackathon. Distributed under the Apache 2.0 License.
+Built by Oceanus Lab for the All Things Agentic Hackathon by Google Cloud. Distributed under the Apache 2.0 License.
