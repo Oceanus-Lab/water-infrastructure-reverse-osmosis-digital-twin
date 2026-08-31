@@ -10,7 +10,7 @@ Oceanus Lab builds an AI-powered digital twin for water infrastructure, fusing p
 
 ![Digital Twin UI](public/assets/snapshot1.png)
 
-**Live demo:** [ro-frontend-903682941870.us-central1.run.app](https://ro-frontend-903682941870.us-central1.run.app) (Backend Under Maintenance)
+**Live demo:** [https://ro-frontend-903682941870.us-central1.run.app](https://ro-frontend-903682941870.us-central1.run.app)
 
 ---
 
