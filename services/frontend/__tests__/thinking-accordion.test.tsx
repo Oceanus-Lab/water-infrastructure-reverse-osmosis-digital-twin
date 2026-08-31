@@ -21,4 +21,14 @@ describe('ThinkingAccordion', () => {
     expect(screen.getByText('650ms')).toBeDefined();
     expect(screen.getByText(/Verified no ungrounded numbers/)).toBeDefined();
   });
+
+  it('renders nothing when there are no specialists or reflexion (conversational mode)', () => {
+    const thinking = {
+      summary: 'Conversational',
+      specialistsConsulted: [],
+    };
+
+    const { container } = render(<ThinkingAccordion thinking={thinking} />);
+    expect(container.firstChild).toBeNull();
+  });
 });

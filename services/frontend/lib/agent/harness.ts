@@ -40,8 +40,32 @@ interface RouterDecision {
 }
 
 function fastRoute(question: string): RouterDecision | null {
-  const q = question.toLowerCase();
+  const q = question.toLowerCase().trim();
   const units = extractUnits(question);
+
+  // 0. Conversational, Greetings & Capability Inquiries (0-Specialist Direct Response)
+  if (
+    q === 'hi' ||
+    q === 'hello' ||
+    q === 'hey' ||
+    q === 'good morning' ||
+    q === 'good afternoon' ||
+    q.includes('new to this place') ||
+    q.includes('new here') ||
+    q.includes('who are you') ||
+    q.includes('what is this') ||
+    q.includes('what can you do') ||
+    q.includes('how to use') ||
+    q.includes('help me') ||
+    q === 'help'
+  ) {
+    return {
+      specialists: [],
+      units: [],
+      needsClarification:
+        "Welcome! I am the RO Digital Twin diagnostic assistant for plant operators and engineers. You can ask me to analyze specific units (e.g., 'Analyze unit F01'), run What-If simulations ('Clean now or wait on B03?'), look up SOP protocols ('What is the silica CIP protocol?'), or review fleet economics.",
+    };
+  }
 
   // 1. Decision & Unit Diagnostic Queries: cross-functional review (Data + Simulation + Economics)
   if (
@@ -171,20 +195,20 @@ export async function runHarness(
   const span = startSpan('harness.execution', { question, date });
   const t0 = Date.now();
 
-  onEvent?.({
-    type: 'thinking',
-    payload: { status: 'running', summary: 'Classifying operator intent and routing to plant specialists...' },
-  });
-
   // 1. Route.
   const routeSpan = startSpan('harness.route');
   const decision = await route(ai, question);
   routeSpan.end({ specialistsCount: decision.specialists.length });
 
-  if (decision.needsClarification) {
-    onToken(decision.needsClarification);
-    span.end({ status: 'needsClarification' });
-    return { durationMs: Date.now() - t0, finalAnswer: decision.needsClarification };
+  // If question is conversational, orientation, or needs clarification: respond directly with NO thinking DAG
+  if (decision.specialists.length === 0 || decision.needsClarification) {
+    const text =
+      decision.needsClarification ||
+      "Welcome! I am the RO Digital Twin diagnostic assistant. I can diagnose unit anomalies, simulate WaterTAP physics, compute cleaning economics, and look up standard CIP protocols. How can I help you today?";
+    onToken(text);
+    onEvent?.({ type: 'token', payload: { text } });
+    span.end({ status: 'conversational' });
+    return { durationMs: Date.now() - t0, finalAnswer: text };
   }
 
   onEvent?.({

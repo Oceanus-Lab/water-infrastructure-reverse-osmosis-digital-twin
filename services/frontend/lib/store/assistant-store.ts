@@ -66,19 +66,14 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
       content: text,
     };
     
-    // Add empty model message placeholder with default initial thinking state
+    // Add empty model message placeholder with no thinking state by default
     const modelMsgId = uuidv4();
     const modelMsg: Message = {
       id: modelMsgId,
       role: 'model',
       content: '',
       isStreaming: true,
-      thinking: {
-        summary: "Multi-Agent Reasoning & Execution",
-        specialistsConsulted: [
-          { id: 'dataAnalyst', status: 'running', durationMs: 0 },
-        ],
-      },
+      thinking: undefined,
       artifacts: [],
     };
     
@@ -101,11 +96,12 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
             if (msgIndex === -1) return { messages: updatedMessages };
 
             const current = updatedMessages[msgIndex];
-            let nextThinking = current.thinking ? { ...current.thinking } : { summary: 'Thinking...', specialistsConsulted: [] };
+            let nextThinking = current.thinking ? { ...current.thinking } : undefined;
             let nextArtifacts = current.artifacts ? [...current.artifacts] : [];
 
             if (rawChunk) {
               if (rawChunk.type === 'thinking') {
+                nextThinking = nextThinking || { summary: 'Multi-Agent Reasoning & Execution', specialistsConsulted: [] };
                 nextThinking.summary = rawChunk.payload?.summary || nextThinking.summary;
                 if (Array.isArray(rawChunk.payload?.specialists)) {
                   nextThinking.specialistsConsulted = rawChunk.payload.specialists.map((id: string) => ({
@@ -115,6 +111,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
                   }));
                 }
               } else if (rawChunk.type === 'specialist') {
+                nextThinking = nextThinking || { summary: 'Consulting specialists...', specialistsConsulted: [] };
                 const specs = [...(nextThinking.specialistsConsulted || [])];
                 const specIndex = specs.findIndex(s => s.id === rawChunk.payload.id);
                 if (specIndex !== -1) {
@@ -124,7 +121,9 @@ export const useAssistantStore = create<AssistantState>((set, get) => ({
                 }
                 nextThinking.specialistsConsulted = specs;
               } else if (rawChunk.type === 'reflexion') {
-                nextThinking.reflexionCritique = rawChunk.payload?.critique;
+                if (nextThinking) {
+                  nextThinking.reflexionCritique = rawChunk.payload?.critique;
+                }
               } else if (rawChunk.type === 'artifact') {
                 nextArtifacts.push(rawChunk.payload);
               }
