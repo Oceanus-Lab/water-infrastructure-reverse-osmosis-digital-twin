@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { useEffect, useState, useRef } from "react";
 import { EquipmentSprite } from "./equipment-sprite";
-import { SpritePlaceholder } from "./sprite-placeholder";
 import { fetchFleetStatus } from "@/lib/api";
 import { UnitHealth } from "@/lib/types";
 import { useReplayStore } from "@/lib/store/replay-store";
@@ -24,10 +23,14 @@ export function PlantScene() {
 
   const getSpriteImage = (id: string | null) => {
     if (!id || id === 'PLANT') return "/assets/equipment/ro-plant3.png";
-    if (id === 'F01' || id.startsWith('G')) return "/assets/equipment/hp-feed-pump.png";
+    if (id === 'F01') return "/assets/equipment/hp-feed-pump.png";
+    if (id === 'F02') return "/assets/equipment/ro-membrane-rack.png";
     if (id === 'F03') return "/assets/equipment/erd.png";
     if (id === 'CIP1') return "/assets/equipment/cip-skid.png";
-    // Everything else (stages A-E, F02, etc.) is likely a membrane rack
+    if (id === 'A01' || id.startsWith('A') || id.startsWith('B')) return "/assets/equipment/pre_filter_a.png";
+    if (id === 'C02' || id.startsWith('C') || id.startsWith('D')) return "/assets/equipment/membrane_stage1.png";
+    if (id === 'E03' || id.startsWith('E')) return "/assets/equipment/membrane_stage2.png";
+    if (id === 'G03' || id.startsWith('G')) return "/assets/equipment/product_transfer.png";
     return "/assets/equipment/ro-membrane-rack.png";
   };
 
@@ -83,10 +86,10 @@ export function PlantScene() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={() => scroll('left')} className="p-2.5 rounded-[8px] border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer">
+            <button onClick={() => scroll('left')} className="p-2.5 rounded-[8px] border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer" aria-label="Scroll left">
               <ChevronLeft className="size-4" />
             </button>
-            <button onClick={() => scroll('right')} className="p-2.5 rounded-[8px] border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer">
+            <button onClick={() => scroll('right')} className="p-2.5 rounded-[8px] border border-border/50 bg-white hover:bg-black/5 transition-colors cursor-pointer" aria-label="Scroll right">
               <ChevronRight className="size-4" />
             </button>
           </div>
@@ -97,16 +100,16 @@ export function PlantScene() {
           className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x pt-1"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {/* Flat horizontal list instead of grid */}
+          {/* Flat horizontal list with full equipment renders */}
           <EquipmentSprite id="PLANT" label="Water Plant" imageSrc="/assets/equipment/ro-plant3.png" isDefault />
           <EquipmentSprite id="F01" label="HP Feed Pump" imageSrc="/assets/equipment/hp-feed-pump.png" unit={getUnit('F01')} />
           <EquipmentSprite id="F02" label="RO Rack" imageSrc="/assets/equipment/ro-membrane-rack.png" unit={getUnit('F02')} />
           <EquipmentSprite id="F03" label="ERD System" imageSrc="/assets/equipment/erd.png" unit={getUnit('F03')} />
           <EquipmentSprite id="CIP1" label="CIP Skid" imageSrc="/assets/equipment/cip-skid.png" unit={getUnit('CIP1')} />
-          <SpritePlaceholder id="A01" label="Pre-Filter A" unit={getUnit('A01')} />
-          <SpritePlaceholder id="C02" label="Membrane Stage 1" unit={getUnit('C02')} />
-          <SpritePlaceholder id="E03" label="Membrane Stage 2" unit={getUnit('E03')} />
-          <SpritePlaceholder id="G03" label="Product Transfer" unit={getUnit('G03')} />
+          <EquipmentSprite id="A01" label="Pre-Filter A" imageSrc="/assets/equipment/pre_filter_a.png" unit={getUnit('A01')} />
+          <EquipmentSprite id="C02" label="Membrane Stage 1" imageSrc="/assets/equipment/membrane_stage1.png" unit={getUnit('C02')} />
+          <EquipmentSprite id="E03" label="Membrane Stage 2" imageSrc="/assets/equipment/membrane_stage2.png" unit={getUnit('E03')} />
+          <EquipmentSprite id="G03" label="Product Transfer" imageSrc="/assets/equipment/product_transfer.png" unit={getUnit('G03')} />
         </div>
       </div>
     </section>
