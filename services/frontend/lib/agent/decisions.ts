@@ -102,3 +102,51 @@ export async function recordDecision(
 }
 
 export { TABLE as DECISION_LOG_TABLE };
+
+export interface DecisionRecordEntry {
+  proposalId: string;
+  recordType: string;
+  unitId: string | null;
+  content: unknown;
+  writtenAt: string;
+  writtenBy: string;
+}
+
+/**
+ * Read the approved-decision record.
+ *
+ * Lives beside `recordDecision` on purpose: read and write then share one credential path and
+ * one table constant, rather than putting a governance-critical table behind two identities.
+ *
+ * Read-only by construction — this issues a SELECT and there is no update or delete path
+ * anywhere in this module (FR-032).
+ */
+export async function listDecisions(limit = 50): Promise<DecisionRecordEntry[]> {
+  const [rows] = await bq.query({
+    query: `
+      SELECT proposal_id, record_type, unit_id, TO_JSON_STRING(content) AS content,
+             FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E3SZ', written_at) AS written_at, written_by
+      FROM \`${TABLE}\`
+      ORDER BY written_at DESC
+      LIMIT @limit`,
+    params: { limit },
+  });
+
+  return (rows as Record<string, unknown>[]).map((r) => ({
+    proposalId: String(r.proposal_id),
+    recordType: String(r.record_type),
+    unitId: r.unit_id === null ? null : String(r.unit_id),
+    content: safeParse(r.content),
+    writtenAt: String(r.written_at),
+    writtenBy: String(r.written_by),
+  }));
+}
+
+function safeParse(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}

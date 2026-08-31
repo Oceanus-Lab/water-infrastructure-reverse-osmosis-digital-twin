@@ -21,8 +21,12 @@ config {
  * "was this reading odd compared to its neighbours", the second "was it odd compared to what
  * the model predicted". Both are kept; neither is a replacement for the other.
  *
- * last_n_points is required by the function and bounds the analysis to the recent window,
- * so this reports on the tail of the series rather than relitigating two years of history.
+ * AI.DETECT_ANOMALIES takes two table arguments — historical data to learn the expected
+ * pattern from, and target data to flag — not the `last_n_points` this query previously
+ * passed (confirmed against the live function signature: no such argument exists, and a dry
+ * run against it fails outright). The 90-day recent window is now expressed as a WHERE split
+ * on reading_date instead: everything before the cutoff is history, the last 90 days is the
+ * target range flagged for anomalies.
  */
 
 SELECT
@@ -45,11 +49,19 @@ FROM
       SELECT unit_id, TIMESTAMP(reading_date) AS ts, unit_n_delta_p AS y
       FROM ${ref("unit_readings")}
       WHERE unit_n_delta_p IS NOT NULL
+        AND reading_date < DATE_SUB(
+          (SELECT MAX(reading_date) FROM ${ref("unit_readings")}), INTERVAL 90 DAY)
+    ),
+    (
+      SELECT unit_id, TIMESTAMP(reading_date) AS ts, unit_n_delta_p AS y
+      FROM ${ref("unit_readings")}
+      WHERE unit_n_delta_p IS NOT NULL
+        AND reading_date >= DATE_SUB(
+          (SELECT MAX(reading_date) FROM ${ref("unit_readings")}), INTERVAL 90 DAY)
     ),
     data_col               => 'y',
     timestamp_col          => 'ts',
     id_cols                => ['unit_id'],
-    anomaly_prob_threshold => 0.9,
-    last_n_points          => 90
+    anomaly_prob_threshold => 0.9
   )
 WHERE is_anomaly = TRUE

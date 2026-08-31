@@ -481,6 +481,82 @@ def validation():
         return json.load(file)
 
 
+# The six editable parameters, with the display metadata the operations-manager surface needs.
+# All six are `assumed`: none has a sourced feed behind it. The external price/grid ingest was
+# specified (spec 010) but never run, so labelling them honestly is the obligation here —
+# see specs/012-complete-persona-screens/research.md R5.
+_ASSUMPTION_META = {
+    "electricity_price_usd_kwh": ("Electricity price", "USD/kWh",
+                                  "No sourced price feed; parametric default"),
+    "pump_efficiency":           ("Pump efficiency", "fraction",
+                                  "Nominal high-pressure pump efficiency"),
+    "recovery_setpoint":         ("Recovery setpoint", "fraction",
+                                  "Plant-held setpoint; not a fouling signal"),
+    "permeate_flow_m3_day":      ("Permeate flow", "m3/day",
+                                  "Nominal per-unit production"),
+    "cip_cost_usd":              ("CIP cost", "USD",
+                                  "Chemicals plus labour, parametric default"),
+    "cip_downtime_lost_usd":     ("CIP downtime cost", "USD",
+                                  "Lost production during a clean"),
+}
+
+
+def _assumptions() -> list[dict]:
+    from economics import PARAMS
+
+    out = []
+    for key, value in PARAMS.items():
+        label, unit, assumption = _ASSUMPTION_META.get(key, (key, "", "Parametric default"))
+        out.append({
+            "key": key, "label": label, "unit": unit,
+            "value": value, "defaultValue": value,
+            "provenance": "assumed", "assumption": assumption, "min": 0,
+        })
+    return out
+
+
+@app.get("/api/economics/fleet")
+def fleet_economics(date: str = Query(...)):
+    """Fleet-wide economics as ONE coherent as-of snapshot.
+
+    Declared before /api/economics/{unit_id} on purpose: FastAPI matches routes in definition
+    order, so the parameterised path would otherwise swallow "fleet" as a unit id.
+
+    Reuses the same per-unit function and as-of cache the single-unit endpoint uses, rather
+    than adding a second way to compute the same number. A unit that cannot be grounded at
+    `date` is named in `unavailableUnits` — never emitted with zeros, which would be
+    indistinguishable from a genuinely zero-cost unit (FR-029).
+    """
+    date = _as_date(date)
+    if _csv("readings.csv").empty:
+        raise HTTPException(status_code=503, detail="readings.csv unavailable")
+
+    units, unavailable = [], []
+    for uid in _unit_ids():
+        e = _economics_as_of(uid, date)
+        if not e:
+            unavailable.append(uid)
+            continue
+        units.append({
+            "unitId": e["unit_id"],
+            "bankId": e["bank_id"],
+            "cycleId": e["cycle_id"],
+            "dpRisePsi": e["dp_rise_psi"],
+            "dailyEnergyPenaltyUsd": e["daily_energy_penalty_usd"],
+            "cumEnergyPenaltyUsd": e["cum_energy_penalty_usd"],
+            "cipCostUsd": e["cip_cost_usd"],
+            "recommendation": e["recommendation"],
+            "breakEvenDay": e["break_even_day"],
+            # Relayed from the economics result, never re-derived here (Constitution IV).
+            "provenance": e["provenance"],
+            "credibility": e["credibility"],
+        })
+
+    units.sort(key=lambda u: u["dailyEnergyPenaltyUsd"], reverse=True)
+    return {"date": date, "units": units,
+            "assumptions": _assumptions(), "unavailableUnits": unavailable}
+
+
 @app.get("/api/economics/{unit_id}")
 def get_economics(unit_id: str, date: str = Query(...)):
     date = _as_date(date)
@@ -564,7 +640,7 @@ def override_economics(unit_id: str, params: dict, date: str = Query(...)):
 # being a SQL file nobody calls. /api/forecast keeps serving the as-of-date Python fit, which
 # answers a different question — see the note in fouling_forecast_bq.sqlx.
 
-_BQ_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+_BQ_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT") or "spatial-cat-489006-a4"
 _BQ_FORECAST_DATASET = os.environ.get("BQ_FORECAST_DATASET", "ro_forecasts")
 _bq_cache: dict[str, object] = {}
 

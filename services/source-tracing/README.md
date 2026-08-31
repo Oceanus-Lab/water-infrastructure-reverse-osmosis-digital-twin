@@ -56,9 +56,10 @@ Production compute path per `AGENTS.md`: BigQuery in-SQL AI (`AI.FORECAST`, `AI.
   output directly instead of re-deriving an anchor from the first 5 readings. 003's
   `deviations.csv`, 004's `current_rise` and 006's `dp_rise_psi` agree on all 92 cycles to
   within rounding, so the numbers reconcile for an operator cross-checking them.
-- **003's `deviations.csv` is still not the literal input to 004–006.** They recompute the
-  same deviation via the shared helper rather than reading the file, so the WaterTAP
-  high-fidelity baseline does not yet propagate down the chain. That remains the next step.
+- **003's `deviations.csv` is now the literal input to 004 and 006** via
+  `common.load_deviation_bus`, which joins the batch pipeline against it (falling back to
+  in-process computation only when the file is absent or stale). The WaterTAP high-fidelity
+  baseline therefore does propagate down the chain when 003 upgrades a cycle's anchor.
 - **Time is measured from `reading_date`, not `days_since_replacement`.** The latter counts
   from the last membrane *replacement* and resets mid-cycle when one is swapped (C01#4,
   D01#4). Use `common.cycle_days` for any per-cycle time axis.

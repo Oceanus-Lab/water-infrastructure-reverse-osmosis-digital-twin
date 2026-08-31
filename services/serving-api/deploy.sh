@@ -70,6 +70,7 @@ gcloud run deploy "${SERVICE}" \
   --source="${HERE}" \
   --project="${PROJECT_ID}" \
   --region="${REGION}" \
+  --set-env-vars="GOOGLE_CLOUD_PROJECT=${PROJECT_ID}" \
   --min-instances=0 \
   --memory=1Gi \
   --quiet \

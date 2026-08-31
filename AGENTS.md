@@ -3,18 +3,12 @@
 Cloud-native digital twin for **Municipal/Industrial BWRO** (Brackish Water RO) facilities.
 Unifies operational data, physics simulation, AI diagnostics, and economics on GCP.
 
-**Current stage:** Spec-driven decomposition (9 features) complete; Feature 009 (cloud
-platform) and Feature 001 (data foundation) implemented. GCP project `spatial-cat-489006-a4`
-is bootstrapped (BigQuery datasets, Pub/Sub topic, least-privilege IAM, budget alert, deploy
-path proven via [infra/](infra/), see [specs/009-cloud-platform/quickstart.md](specs/009-cloud-platform/quickstart.md)).
-`ro_curated` now holds the harmonized 21-unit OCWD history (15,624 rows), re-derived
-`dss`/cycle grouping, a 71-event CIP ground-truth catalog, and measured-vs-not-available
-signal provenance — see [pipeline/](pipeline/) and
-[specs/001-data-foundation/quickstart.md](specs/001-data-foundation/quickstart.md).
-Runnable code: the WaterTAP validation spike, `infra/` (Terraform/scripts), and `pipeline/`
-(loader + Dataform transforms). Remaining
-features (001–008) still live as design briefs in [docs/](docs/) and specs in
-[specs/](specs/). Treat the docs as the source of truth; do not duplicate their content.
+**Current stage:** all 11 spec-kit features (001–011, see [specs/](specs/)) have runnable
+implementations — data foundation, live replay, physics deviation, forecast/anomaly, fouling
+validation, economics, AI assistant, visual twin UI, cloud platform, external data ingest, and
+Cloud Run deployment. A live demo is deployed (link + real backtest results in
+[README.md](README.md)). Treat [docs/](docs/) and each feature's `specs/<NNN>/quickstart.md` as
+the source of truth for that area; do not duplicate their content here.
 
 ## Start here
 
@@ -65,6 +59,17 @@ detection, embeddings, and NL summarization happen *in SQL, in-place* (`AI.FOREC
   top governance priority. See [docs/04-ai-agent.md](docs/04-ai-agent.md).
 - **Model names:** new agents use `gemini-3-flash-preview` / `gemini-3-pro-preview`. Never rename an
   existing agent's model. A 404 is usually a `GOOGLE_CLOUD_LOCATION` issue (try `global`), not the model name.
+- **Deployed ADK agent hits a preview-tier quota wall** (429s on `stateful_interaction_creations` /
+  `interaction_throughput_bytes`, not visible in Cloud Console Quotas). Workaround already implemented:
+  `services/frontend/app/api/agent/stream/route.ts` checks a `ro_embeddings.qa_cache` semantic cache
+  (`VECTOR_SEARCH`) before calling the agent and falls back to it on 429. See
+  [docs/11-agent-enterprise-quota.md](docs/11-agent-enterprise-quota.md) before debugging agent 429s.
+- **Dataform:** the installed gcloud SDK has no `dataform` command group — use the local Dataform CLI
+  (`npm install -g @dataform/cli`) against `pipeline/dataform/`. `workflow_settings.yaml`'s
+  default datasets (`dataform`/`dataform_assertions`) won't exist since datasets are Terraform-provisioned;
+  point them at existing curated/staging datasets explicitly.
+- **Terraform:** `terraform test` only auto-discovers `*.tftest.hcl` inside the module's own `tests/`
+  subdir (`infra/terraform/tests/`), not a sibling `infra/tests/` dir.
 
 ## Working agreements
 
